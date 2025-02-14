@@ -1,8 +1,14 @@
 from django.urls import path
-from . import views
+from .views import sample_api
+from .views import MyTokenObtainPairView
+from rest_framework_simplejwt.views import TokenRefreshView
+from django.urls import path
+from .views import register_user
 
 urlpatterns = [
-    path("register/", views.register, name="register"),
-    path("send_message/", views.send_message, name="send_message"),
-    path("get_messages/<str:chat_id>/", views.get_messages, name="get_messages"),
+    # path('hello/', sample_api),
+    path('login/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('register/', register_user, name='register'),
+
 ]
