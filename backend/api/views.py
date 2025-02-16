@@ -12,10 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from .models import ChatMessage, Group, User
-from rest_framework.views import APIView
-from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
+from .models import ChatMessage, Group
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
 from .serializers import (
@@ -24,7 +21,7 @@ from .serializers import (
     GroupSerializer,
     ChatMessageSerializer
 )
-
+ 
 User = get_user_model()
 
 def sample_api(request):
@@ -66,25 +63,25 @@ def register_user(request):
     return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
 
 
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def login_user(request):
-    email = request.data.get("email")  # Changed from `username`
-    password = request.data.get("password")
+# @api_view(["POST"])
+# @permission_classes([AllowAny])
+# def login_user(request):
+#     email = request.data.get("email")  # Changed from `username`
+#     password = request.data.get("password")
 
-    try:
-        user = User.objects.get(email=email)  # Get user by email
-    except User.DoesNotExist:
-        return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+#     try:
+#         user = User.objects.get(email=email)  # Get user by email
+#     except User.DoesNotExist:
+#         return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-    if not user.check_password(password):  # Check hashed password
-        return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+#     if not user.check_password(password):  # Check hashed password
+#         return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-    refresh = RefreshToken.for_user(user)  # Generate JWT tokens
-    return Response({
-        "refresh": str(refresh),
-        "access": str(refresh.access_token),
-    }, status=status.HTTP_200_OK)
+#     refresh = RefreshToken.for_user(user)  # Generate JWT tokens
+#     return Response({
+#         "refresh": str(refresh),
+#         "access": str(refresh.access_token),
+#     }, status=status.HTTP_200_OK)
 
 # Search users by name or bio
 @api_view(['GET'])
