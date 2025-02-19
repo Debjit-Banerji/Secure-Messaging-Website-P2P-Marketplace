@@ -15,13 +15,14 @@ from rest_framework import status
 from .models import ChatMessage, Group
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from .serializers import (
     UserSerializer,
     UserProfileUpdateSerializer,
     GroupSerializer,
     ChatMessageSerializer
 )
- 
+
 User = get_user_model()
 
 def sample_api(request):
@@ -50,6 +51,7 @@ class UserSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 # API endpoint to register users
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register_user(request):
@@ -59,9 +61,25 @@ def register_user(request):
     bio = request.data.get("bio", "")
     phone = request.data.get("phone", "")
 
-    user = User.objects.create_user(username=username, email=email, password=password, bio=bio, phone=phone)
-    return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
+    try:
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            bio=bio,
+            phone=phone
+        )
+    except IntegrityError:
+        # This typically indicates the username already exists.
+        return Response(
+            {"error": "Username already exists. Please choose another username."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
+    return Response(
+        {"message": "User registered successfully!"},
+        status=status.HTTP_201_CREATED
+    )
 
 # @api_view(["POST"])
 # @permission_classes([AllowAny])

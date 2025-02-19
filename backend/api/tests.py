@@ -4,21 +4,20 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from .models import ChatMessage, Group
+import json
+import pytest
+from channels.testing import WebsocketCommunicator
+from backend.routing import application  # Import your ASGI application
 
 User = get_user_model()
-
 
 class BasicUserTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        # Clean out existing data.
         User.objects.all().delete()
         Group.objects.all().delete()
 
     def test_registration(self):
-        """
-        Test that a new user can register successfully.
-        """
         url = reverse('register')
         data = {
             "username": "testuser",
@@ -33,10 +32,6 @@ class BasicUserTests(APITestCase):
         self.assertEqual(response.data["message"], "User registered successfully!")
 
     def test_jwt_login(self):
-        """
-        Test that a user can login and receive JWT tokens.
-        """
-        # First, register the user.
         self.client.post(reverse('register'), {
             "username": "testuser",
             "email": "test@example.com",
@@ -45,7 +40,6 @@ class BasicUserTests(APITestCase):
             "phone": "1234567890"
         }, format='json')
 
-        # Then login using the JWT login endpoint.
         url = reverse('token_obtain_pair')
         data = {"username": "testuser", "password": "testpass"}
         response = self.client.post(url, data, format='json')
@@ -54,10 +48,6 @@ class BasicUserTests(APITestCase):
         self.assertIn("refresh", response.data)
 
     def test_search_users(self):
-        """
-        Test that a logged-in user can search for other users.
-        """
-        # Register two users with unique usernames.
         self.client.post(reverse('register'), {
             "username": "user3",
             "email": "user3@example.com",
@@ -73,30 +63,25 @@ class BasicUserTests(APITestCase):
             "phone": "2222222222"
         }, format='json')
         
-        # Login with one of the users.
         login_response = self.client.post(reverse('token_obtain_pair'), {
             "username": "user3",
             "password": "testpass"
         }, format='json')
         token = login_response.data.get("access")
         
-        # Use the token to search for users.
         url = reverse('search-users')
         response = self.client.get(url, {"q": "user"}, HTTP_AUTHORIZATION=f"Bearer {token}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(len(response.data), 2)
 
-
 class AdvancedUserTests(APITestCase):
     def setUp(self):
-        # Clear any preexisting data.
         User.objects.all().delete()
         Group.objects.all().delete()
         
         self.register_url = reverse('register')
         self.login_url = reverse('token_obtain_pair')
         
-        # Create two users via the registration endpoint.
         self.user1_data = {
             "username": "user1",
             "email": "user1@example.com",
@@ -104,7 +89,6 @@ class AdvancedUserTests(APITestCase):
             "bio": "I am user1",
             "phone": "1111111111"
         }
-        # Pass a 'name' field for user2.
         self.user2_data = {
             "username": "user2",
             "email": "user2@example.com",
@@ -116,7 +100,6 @@ class AdvancedUserTests(APITestCase):
         self.client.post(self.register_url, self.user1_data, format='json')
         self.client.post(self.register_url, self.user2_data, format='json')
         
-        # Login both users to get JWT tokens.
         login_response1 = self.client.post(
             self.login_url,
             {"username": self.user1_data["username"], "password": self.user1_data["password"]},
@@ -131,21 +114,16 @@ class AdvancedUserTests(APITestCase):
         )
         self.user2_token = login_response2.data.get("access")
         
-        # Retrieve the created user objects.
         self.user1 = User.objects.get(username="user1")
         self.user2 = User.objects.get(username="user2")
         
-        # Since the registration view may not save the 'name' field,
-        # update user2's name here so that it matches the test expectation.
         if not self.user2.name:
             self.user2.name = "TestUser2"
             self.user2.save()
         
-        # Create a friend relationship between user1 and user2.
         self.user1.friends.add(self.user2)
         self.user2.friends.add(self.user1)
         
-        # Create a group and add both users as members.
         self.group = Group.objects.create(name="Test Group")
         self.group.members.add(self.user1, self.user2)
 
@@ -153,9 +131,6 @@ class AdvancedUserTests(APITestCase):
         return {'HTTP_AUTHORIZATION': f'Bearer {token}'}
 
     def test_update_profile(self):
-        """
-        Test updating the user profile (name, bio, phone).
-        """
         update_url = reverse('update-profile')
         data = {
             "name": "User One Updated",
@@ -173,11 +148,7 @@ class AdvancedUserTests(APITestCase):
         self.assertEqual(self.user1.phone, data["phone"])
 
     def test_search_friends_groups(self):
-        """
-        Test searching for friends and groups.
-        """
         search_url = reverse('search-friends-groups')
-        # Use a query that should match user2's name ("TestUser2") and the group "Test Group".
         response = self.client.get(
             search_url, {"q": "test"}, **self.auth_headers(self.user1_token)
         )
@@ -188,9 +159,6 @@ class AdvancedUserTests(APITestCase):
         self.assertTrue(any(group["name"] == "Test Group" for group in groups))
 
     def test_send_chat(self):
-        """
-        Test sending a chat message from user1 to user2.
-        """
         send_chat_url = reverse('send-chat')
         data = {
             "receiver": self.user2.id,
@@ -205,17 +173,12 @@ class AdvancedUserTests(APITestCase):
         self.assertEqual(response.data.get("receiver"), self.user2.id)
 
     def test_get_chats(self):
-        """
-        Test retrieving chat messages between user1 and user2.
-        """
         send_chat_url = reverse('send-chat')
-        # User1 sends a message.
         self.client.post(
             send_chat_url,
             {"receiver": self.user2.id, "message": "Hi user2, this is user1"},
             format='json', **self.auth_headers(self.user1_token)
         )
-        # User2 sends a reply.
         self.client.post(
             send_chat_url,
             {"receiver": self.user1.id, "message": "Hi user1, user2 here"},
@@ -234,3 +197,19 @@ class AdvancedUserTests(APITestCase):
         self.assertIn(self.user2.id, sender_ids)
         self.assertIn(self.user1.id, receiver_ids)
         self.assertIn(self.user2.id, receiver_ids)
+
+class ChatConsumerTests(APITestCase):
+    @pytest.mark.asyncio
+    async def test_chat_consumer(self):
+        communicator = WebsocketCommunicator(application, "/ws/chat/")
+        connected, subprotocol = await communicator.connect()
+        assert connected, "WebSocket connection failed"
+
+        test_message = {"message": "Hello, Channels!"}
+        await communicator.send_to(text_data=json.dumps(test_message))
+
+        response = await communicator.receive_from()
+        response_data = json.loads(response)
+        assert response_data.get("message") == "Hello, Channels!", "Echoed message mismatch"
+
+        await communicator.disconnect()
