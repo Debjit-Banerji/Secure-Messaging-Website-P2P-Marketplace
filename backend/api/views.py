@@ -171,3 +171,50 @@ def send_chat(request):
     chat = ChatMessage.objects.create(sender=sender, receiver=receiver, message=message)
     serializer = ChatMessageSerializer(chat)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_contact(request):
+    """
+    Add a user to the current user's contacts.
+    Expects a JSON payload with "contact_id".
+    """
+    contact_id = request.data.get("contact_id")
+    if not contact_id:
+        return Response({"error": "contact_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    contact = get_object_or_404(User, id=contact_id)
+    # Optionally, you can check if the contact is already added.
+    if contact in request.user.friends.all():
+        return Response({"error": "Contact already added."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    request.user.friends.add(contact)
+    return Response({"message": "Contact added successfully!"}, status=status.HTTP_200_OK)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_contacts(request):
+    """
+    List all contacts (friends) of the current user.
+    """
+    contacts = request.user.friends.all()
+    serializer = UserSerializer(contacts, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def remove_contact(request):
+    """
+    Remove a user from the current user's contacts.
+    Expects a JSON payload with "contact_id".
+    """
+    contact_id = request.data.get("contact_id")
+    if not contact_id:
+        return Response({"error": "contact_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    contact = get_object_or_404(User, id=contact_id)
+    if contact not in request.user.friends.all():
+        return Response({"error": "Contact not found in your contacts."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    request.user.friends.remove(contact)
+    return Response({"message": "Contact removed successfully!"}, status=status.HTTP_200_OK)

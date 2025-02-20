@@ -73,6 +73,65 @@ class BasicUserTests(APITestCase):
         response = self.client.get(url, {"q": "user"}, HTTP_AUTHORIZATION=f"Bearer {token}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(len(response.data), 2)
+            
+    @classmethod
+    def setUpTestData(cls):
+        # Create two users.
+        cls.user1 = User.objects.create_user(
+            username="user1",
+            email="user1@example.com",
+            password="pass1234",
+            bio="I am user1",
+            phone="1111111111"
+        )
+        cls.user2 = User.objects.create_user(
+            username="user2",
+            email="user2@example.com",
+            password="pass1234",
+            bio="I am user2",
+            phone="2222222222"
+        )
+
+    def setUp(self):
+        # Login user1 to obtain a token.
+        url = reverse('token_obtain_pair')
+        response = self.client.post(url, {"username": "user1", "password": "pass1234"}, format='json')
+        self.token = response.data.get("access")
+        self.auth_headers = {'HTTP_AUTHORIZATION': f'Bearer {self.token}'}
+
+    def test_add_contact(self):
+        url = reverse('add-contact')
+        data = {"contact_id": self.user2.id}
+        response = self.client.post(url, data, format='json', **self.auth_headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("message"), "Contact added successfully!")
+        
+        # Verify that user2 is now in user1's contacts.
+        self.user1.refresh_from_db()
+        self.assertIn(self.user2, self.user1.friends.all())
+
+    def test_list_contacts(self):
+        # First, add a contact.
+        self.user1.friends.add(self.user2)
+        url = reverse('list-contacts')
+        response = self.client.get(url, format='json', **self.auth_headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Check that the returned list includes user2.
+        contacts = response.data
+        self.assertTrue(any(contact["username"] == "user2" for contact in contacts))
+
+    def test_remove_contact(self):
+        # Add user2 to user1's contacts first.
+        self.user1.friends.add(self.user2)
+        url = reverse('remove-contact')
+        data = {"contact_id": self.user2.id}
+        response = self.client.post(url, data, format='json', **self.auth_headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("message"), "Contact removed successfully!")
+        
+        # Verify removal.
+        self.user1.refresh_from_db()
+        self.assertNotIn(self.user2, self.user1.friends.all())
 
 class AdvancedUserTests(APITestCase):
     def setUp(self):
