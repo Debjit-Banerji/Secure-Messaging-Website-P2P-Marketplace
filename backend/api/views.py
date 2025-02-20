@@ -16,6 +16,7 @@ from .models import ChatMessage, Group
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from .serializers import UserProfileSerializer
 from .serializers import (
     UserSerializer,
     UserProfileUpdateSerializer,
