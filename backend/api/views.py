@@ -218,3 +218,23 @@ def remove_contact(request):
     
     request.user.friends.remove(contact)
     return Response({"message": "Contact removed successfully!"}, status=status.HTTP_200_OK)
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def profile_view(request):
+    """
+    GET  -> Returns the non-sensitive data of the logged-in user
+    PATCH -> Partially updates the user's profile with provided fields
+    """
+    if request.method == "GET":
+        # Serialize the current user (from the token) without sensitive fields
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # elif request.method == "PATCH":
+    #     # Partially update the user's profile (e.g., bio, phone, etc.)
+    #     serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+    #     if serializer.is_valid():
+    #         serializer.save()
+    #         return Response(serializer.data, status=status.HTTP_200_OK)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

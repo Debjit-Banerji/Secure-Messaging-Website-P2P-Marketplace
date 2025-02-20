@@ -44,3 +44,17 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
         fields = ["id", "sender", "sender_username", "receiver", "receiver_username", "message", "timestamp"]
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        # Option A: Explicitly list fields you want to expose
+        fields = [
+            'id',
+            'username',
+            'email',
+            'bio',
+            'phone',
+            'name',
+            # ... any other safe fields ...
+        ]

@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import MyTokenObtainPairView, register_user, search_users, update_profile, search_friends_groups, get_chats, send_chat, sample_api, add_contact, list_contacts, remove_contact
+from .views import MyTokenObtainPairView, register_user, search_users, update_profile, search_friends_groups, get_chats, send_chat, sample_api, add_contact, list_contacts, remove_contact, profile_view
 
 urlpatterns = [
     path('hello/', sample_api, name='hello'),
@@ -16,4 +16,5 @@ urlpatterns = [
     path('contacts/add/', add_contact, name='add-contact'),
     path('contacts/', list_contacts, name='list-contacts'),
     path('contacts/remove/', remove_contact, name='remove-contact'),
+    path('profile/', profile_view, name='profile'),
 ]
