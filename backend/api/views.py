@@ -104,9 +104,19 @@ def register_user(request):
 
 # Search users by name or bio
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def search_users(request):
     query = request.GET.get('q', '')
-    users = User.objects.filter(username__icontains=query) | User.objects.filter(bio__icontains=query)
+
+    # Get the IDs of users to exclude: current user + existing contacts
+    excluded_users = list(request.user.friends.values_list('id', flat=True))  # Get contact IDs
+    excluded_users.append(request.user.id)  # Add current user ID
+
+    # Filter users based on query and exclude already added contacts + current user
+    users = User.objects.filter(
+        Q(username__icontains=query) | Q(bio__icontains=query)
+    ).exclude(id__in=excluded_users)
+
     return Response(UserSerializer(users, many=True).data)
 
 @api_view(["PUT", "PATCH"])
@@ -148,12 +158,17 @@ def get_chats(request, user_id):
     """
     user = request.user
     other_user = get_object_or_404(User, id=user_id)
-    chats = ChatMessage.objects.filter(
-        (Q(sender=user) & Q(receiver=other_user)) |
-        (Q(sender=other_user) & Q(receiver=user))
-    ).order_by("timestamp")
-    serializer = ChatMessageSerializer(chats, many=True)
-    return Response(serializer.data)
+    sent_messages = ChatMessage.objects.filter(sender=user, receiver=other_user).order_by("timestamp")
+    received_messages = ChatMessage.objects.filter(sender=other_user, receiver=user).order_by("timestamp")
+    
+    # Serialize messages
+    sent_serializer = ChatMessageSerializer(sent_messages, many=True)
+    received_serializer = ChatMessageSerializer(received_messages, many=True)
+    
+    return Response({
+        "sent": sent_serializer.data,
+        "received": received_serializer.data
+    })
 
 # Add Chat Message Between Two Parties
 @api_view(["POST"])
