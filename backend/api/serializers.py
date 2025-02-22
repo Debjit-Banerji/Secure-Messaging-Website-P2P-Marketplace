@@ -23,7 +23,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["name", "password", "email", "phone", "bio"]
+        fields = ["name", "password", "email", "phone", "bio", "email_cipher", "phone_cipher"]
 
     def update(self, instance, validated_data):
         if "password" in validated_data:
@@ -56,5 +56,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'bio',
             'phone',
             'name',
+            'email_cipher',
+            'phone_cipher',
             # ... any other safe fields ...
         ]
