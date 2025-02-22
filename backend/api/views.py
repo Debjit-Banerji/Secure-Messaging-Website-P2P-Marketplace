@@ -61,14 +61,17 @@ def register_user(request):
     password = request.data.get("password")
     bio = request.data.get("bio", "")
     phone = request.data.get("phone", "")
-
+    email_cipher = request.data.get("email_cipher")
+    rsaPublicKey = request.data.get("rsa_public_key")
+    dhPublicKey = request.data.get("dh_public_key")
     try:
         user = User.objects.create_user(
             username=username,
             email=email,
             password=password,
             bio=bio,
-            phone=phone
+            phone=phone,
+            email_cipher = email_cipher,
         )
     except IntegrityError:
         # This typically indicates the username already exists.
