@@ -13,6 +13,7 @@ export default function Login() {
   const [Username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
   const loginError = useSelector((state) => state.user.error);
 
   const curPass = useSelector((state) => state.user.password);
@@ -29,15 +30,16 @@ export default function Login() {
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
+    setError(""); // Clear previous errors
     try {
       const hashedPassword = await hashPasswordSHA256(password);
       const userData = { username: Username, password: hashedPassword, actual_password: password };
-      console.log(userData);
       await dispatch(loginUser({ ...userData })).unwrap();
       setMessage(`Welcome!`);
       navigate("/chat");
     } catch (error) {
-      // if(loginError) setMessage(`${loginError.error}`);
+      setError("Invalid username or password");
+      setPassword(""); // Clear password field on error
     }
   };
 
@@ -49,20 +51,6 @@ export default function Login() {
     }
 
     try {
-      // Generate RSA keys for encryption
-      // const rsaKeys = await generateRSAKeyPair();
-      // const publicKey = await window.crypto.subtle.exportKey("spki", rsaKeys.publicKey);
-      // const privateKey = await window.crypto.subtle.exportKey("pkcs8", rsaKeys.privateKey);
-
-      // Generate ECDH keys for key exchange
-      // const dhKeys = await generateDHKeys();
-      // const dhPublicKey = await window.crypto.subtle.exportKey("spki", dhKeys.publicKey);
-      // const dhPrivateKey = await window.crypto.subtle.exportKey("pkcs8", dhKeys.privateKey);
-
-      // Store private keys locally (client-side only)
-      // localStorage.setItem("rsaPrivateKey", Buffer.from(privateKey).toString("base64"));
-      // localStorage.setItem("dhPrivateKey", Buffer.from(dhPrivateKey).toString("base64"));
-
       const key = await deriveAESKey(password);
 
       // Wait for encryption to finish
@@ -75,8 +63,6 @@ export default function Login() {
         username: Username, 
         email_cipher: encryptedEmail, 
         password: hashedPassword,
-        // rsa_public_key: Buffer.from(publicKey).toString("base64"),
-        // dh_public_key: Buffer.from(dhPublicKey).toString("base64"),
       };
 
       await dispatch(registerUser(userData)).unwrap();
@@ -97,9 +83,10 @@ export default function Login() {
   return (
     <Container>
       <Content>
-        <div className="tabs">
-          <button
-            className={`tab ${activeTab === "login" ? "active" : ""}`}
+        <FormTitle>Welcome Back</FormTitle>
+        <TabsContainer>
+          <TabButton
+            isActive={activeTab === "login"}
             onClick={() => {
               setActiveTab("login");
               setMessage("");
@@ -110,9 +97,9 @@ export default function Login() {
             }}
           >
             Login
-          </button>
-          <button
-            className={`tab ${activeTab === "signup" ? "active" : ""}`}
+          </TabButton>
+          <TabButton
+            isActive={activeTab === "signup"}
             onClick={() => {
               setActiveTab("signup");
               setMessage("");
@@ -123,60 +110,81 @@ export default function Login() {
             }}
           >
             SignUp
-          </button>
-        </div>
-        {message && <div className="message active">{message}</div>}
+          </TabButton>
+        </TabsContainer>
+        {error && <ErrorMessage>{error}</ErrorMessage>}
+        {message && <SuccessMessage>{message}</SuccessMessage>}
+        
         {activeTab === "login" && (
-          <form className="form" onSubmit={handleLoginSubmit}>
-            <input
-              type="text"
-              placeholder="Username"
-              required
-              value={Username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button type="submit">Login</button>
-          </form>
+          <StyledForm onSubmit={handleLoginSubmit}>
+            <InputGroup>
+              <Label>Username</Label>
+              <Input
+                type="text"
+                placeholder="Enter your username"
+                required
+                value={Username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </InputGroup>
+            <InputGroup>
+              <Label>Password</Label>
+              <Input
+                type="password"
+                placeholder="Enter your password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </InputGroup>
+            <SubmitButton type="submit">Login</SubmitButton>
+          </StyledForm>
         )}
+        
         {activeTab === "signup" && (
-          <form className="form" onSubmit={handleSignupSubmit}>
-            <input
-              type="text"
-              placeholder="Username"
-              required
-              value={Username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <input
-              type="email"
-              placeholder="Email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Confirm Password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-            />
-            <button type="submit">SignUp</button>
-          </form>
+          <StyledForm onSubmit={handleSignupSubmit}>
+            <InputGroup>
+              <Label>Username</Label>
+              <Input
+                type="text"
+                placeholder="Username"
+                required
+                value={Username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </InputGroup>
+            <InputGroup>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                placeholder="Email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </InputGroup>
+            <InputGroup>
+              <Label>Password</Label>
+              <Input
+                type="password"
+                placeholder="Password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </InputGroup>
+            <InputGroup>
+              <Label>Confirm Password</Label>
+              <Input
+                type="password"
+                placeholder="Confirm Password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </InputGroup>
+            <SubmitButton type="submit">SignUp</SubmitButton>
+          </StyledForm>
         )}
       </Content>
     </Container>
@@ -189,76 +197,115 @@ const Container = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
-  position: relative;
-  background-color: rgb(16, 16, 46);
+  background: linear-gradient(135deg, rgb(16, 16, 46) 0%, rgb(26, 26, 76) 100%);
 `;
 
 const Content = styled.div`
-  background-color: rgba(255, 255, 255, 0.7);
-  width: 400px;
-  padding: 2rem;
-  border-radius: 10px;
-  box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.2);
+  background-color: rgba(255, 255, 255, 0.95);
+  width: 100%;
+  max-width: 450px;
+  padding: 2.5rem;
+  border-radius: 15px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+`;
+
+const FormTitle = styled.h1`
+  font-size: 2rem;
+  color: rgb(16, 16, 46);
+  margin-bottom: 1.5rem;
   text-align: center;
+`;
 
-  .tabs {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 1rem;
+const StyledForm = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+`;
+
+const InputGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+`;
+
+const Label = styled.label`
+  font-size: 0.9rem;
+  color: rgb(16, 16, 46);
+  font-weight: 500;
+`;
+
+const Input = styled.input`
+  padding: 0.8rem;
+  font-size: 1rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  outline: none;
+  transition: all 0.3s ease;
+
+  &:focus {
+    border-color: rgb(16, 16, 46);
+    box-shadow: 0 0 0 2px rgba(16, 16, 46, 0.1);
   }
+`;
 
-  .tab {
-    background: none;
-    border: none;
-    font-size: 1.2rem;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    transition: all 0.3s ease-in-out;
-    color: black;
+const SubmitButton = styled.button`
+  background-color: rgb(16, 16, 46);
+  color: white;
+  font-size: 1rem;
+  padding: 1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+
+  &:hover {
+    background-color: rgb(26, 26, 76);
+    transform: translateY(-1px);
   }
+`;
 
-  .tab.active {
-    font-weight: bold;
-    border-bottom: 2px solid black;
-  }
+const ErrorMessage = styled.div`
+  color: #dc3545;
+  background-color: #ffe6e6;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+`;
 
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
+const SuccessMessage = styled.div`
+  color: #198754;
+  background-color: #d1e7dd;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+`;
 
-  input {
-    padding: 0.8rem;
-    font-size: 1rem;
-    border: 1px solid black;
-    border-radius: 5px;
-    outline: none;
-    transition: border 0.3s;
-  }
+const TabsContainer = styled.div`
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  justify-content: center;
+`;
 
-  input:focus {
-    border: 1px solid black;
-  }
+const TabButton = styled.button`
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+  background-color: ${props => props.isActive ? 'rgb(16, 16, 46)' : 'transparent'};
+  color: ${props => props.isActive ? 'white' : 'rgb(16, 16, 46)'};
+  border: 2px solid rgb(16, 16, 46);
 
-  button {
-    background-color: black;
-    color: white;
-    font-size: 1rem;
-    padding: 0.8rem;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background 0.3s;
-  }
-
-  button:hover {
-    background-color: grey;
-  }
-
-  .message {
-    margin-bottom: 1rem;
-    color: black;
-    font-size: 1rem;
+  &:hover {
+    background-color: ${props => props.isActive ? 'rgb(26, 26, 76)' : 'rgba(16, 16, 46, 0.1)'};
+    transform: translateY(-1px);
   }
 `;
