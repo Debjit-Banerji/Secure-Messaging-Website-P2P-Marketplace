@@ -49,37 +49,51 @@ export default function Chat() {
 }
 
 const ContactsContainer = styled.div`
-  width: 30%;  /* Takes 30% of parent container */
+  width: 25%;
   height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 1rem;
-  background-color: #080420; /* Adjust background color */
+  background-color: #181c38;
   box-sizing: border-box;
-  border-right: 2px solid rgba(255, 255, 255, 0.1); /* Visual separation */
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.15);
 `;
 
 const GlobalStyle = createGlobalStyle`
+  body {
+    font-family: 'Inter', 'Segoe UI', Roboto, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #0f1225;
+  }
 
   /* Hide Scrollbars */
   ::-webkit-scrollbar {
-    display: none; /* Chrome, Safari */
+    width: 4px;
+    background: transparent;
   }
 
-  -ms-overflow-style: none; /* Internet Explorer and Edge */
-  scrollbar-width: none; /* Firefox */
+  ::-webkit-scrollbar-thumb {
+    background: rgba(93, 139, 252, 0.3);
+    border-radius: 10px;
+  }
+
+  -ms-overflow-style: none;
+  scrollbar-width: thin;
 `;
 
 const MainContainer = styled.div`
   display: flex;
   width: 100vw;
   height: 100vh;
-  margin-top: 0; /* Changed from 4rem to 0 since header is removed */
-  overflow: hidden; /* Prevent scrolling */
+  overflow: hidden;
+  background-color: #0d1022;
 `;
 
 const NavBarContainer = styled.div`
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+  z-index: 10;
 `;
 
 const Container = styled.div`
@@ -87,28 +101,21 @@ const Container = styled.div`
   height: 100%;
   display: flex;
   flex-direction: row;
-  background-color: rgb(26, 26, 90);
+  background-color: #12162f;
   box-sizing: border-box;
   overflow: hidden;
-`;
-
-const ChatContainer = styled.div`
-  width: 70%;  /* Takes 70% of parent container */
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1rem;
-  box-sizing: border-box;
+  border-radius: 10px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 `;
 
 const ContentContainer = styled.div`
   margin-left: 4rem;
-  width: calc(100vw - 4rem); /* Occupy remaining width */
-  min-height: 100vh; /* Changed from calc(100vh - 5rem) to 100vh since header is removed */
+  width: calc(100vw - 4rem);
+  min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
   box-sizing: border-box;
   overflow: hidden;
+  padding: 1rem;
 `;
