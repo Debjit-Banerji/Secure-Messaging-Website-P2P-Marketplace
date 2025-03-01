@@ -6,7 +6,6 @@ import NavBar from "../components/NavBar";
 import Contacts from "../components/Contacts";
 import Welcome from "../components/Welcome";
 import ChatArea from "../components/ChatArea";
-import Header from "../components/Header";
 import { host } from "../store/redux-store";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchContacts } from "../store/slices/user-slice";
@@ -31,7 +30,6 @@ export default function Chat() {
     <>
     <GlobalStyle />
     <MainContainer>
-      <Header />
       <NavBarContainer>
         <NavBar />
       </NavBarContainer>
@@ -77,7 +75,7 @@ const MainContainer = styled.div`
   display: flex;
   width: 100vw;
   height: 100vh;
-  margin-top: 4rem;
+  margin-top: 0; /* Changed from 4rem to 0 since header is removed */
   overflow: hidden; /* Prevent scrolling */
 `;
 
@@ -107,7 +105,7 @@ const ChatContainer = styled.div`
 const ContentContainer = styled.div`
   margin-left: 4rem;
   width: calc(100vw - 4rem); /* Occupy remaining width */
-  min-height: calc(100vh - 5rem); /* Occupy remaining height */
+  min-height: 100vh; /* Changed from calc(100vh - 5rem) to 100vh since header is removed */
   display: flex;
   justify-content: center;
   align-items: center;

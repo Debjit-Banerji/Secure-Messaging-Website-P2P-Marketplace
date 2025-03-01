@@ -50,10 +50,10 @@ const NavItem = ({ to, icon, tooltip, onClick }) => (
 // Styled Components
 const NavbarContainer = styled.div`
   position: fixed;
-  top: 5rem;
+  top: 0; /* Changed from 5rem to 0 to move the navbar up */
   left: 0;
   width: 4rem;
-  height: calc(100vh - 5rem);
+  height: 100vh; /* Changed from calc(100vh - 5rem) to 100vh */
   background-color: #111827;
   display: flex;
   flex-direction: column;
