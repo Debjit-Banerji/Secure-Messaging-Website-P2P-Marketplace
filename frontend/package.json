@@ -10,6 +10,8 @@
     "cra-template": "1.2.0",
     "date-fns": "^4.1.0",
     "emoji-picker-react": "^4.12.0",
+    "libsodium-wrappers": "^0.7.15",
+    "libsodium-wrappers-sumo": "^0.7.15",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.5.0",
