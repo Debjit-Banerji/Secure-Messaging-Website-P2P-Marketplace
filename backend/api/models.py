@@ -4,10 +4,12 @@ from django.contrib.auth.models import AbstractUser
 
 class User(AbstractUser):
     name = models.CharField(max_length=100, blank=True)
+    profile_pic = models.CharField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     bio = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=15, blank=True, null=True)
+    public_key = models.CharField(blank=True, null=True)
     email_cipher = models.JSONField(blank=True, null=True)
     phone_cipher = models.JSONField(blank=True, null=True)
     # Many-to-many for friend relationships.
@@ -28,6 +30,7 @@ class ChatMessage(models.Model):
     sender = models.ForeignKey(User, related_name="sent_messages", on_delete=models.CASCADE)
     receiver = models.ForeignKey(User, related_name="received_messages", on_delete=models.CASCADE)
     message = models.TextField()
+    nonce = models.CharField(blank=True, null=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
