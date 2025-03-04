@@ -23,7 +23,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["name", "password", "email", "phone", "bio", "email_cipher", "phone_cipher"]
+        fields = ["name", "password", "email", "phone", "bio", "profile_pic"]
 
     def update(self, instance, validated_data):
         if "password" in validated_data:
@@ -43,7 +43,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ChatMessage
-        fields = ["id", "sender", "sender_username", "receiver", "receiver_username", "message", "timestamp"]
+        fields = ["id", "sender", "sender_username", "receiver", "receiver_username", "message", "timestamp", "nonce"]
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -56,7 +56,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'bio',
             'phone',
             'name',
-            'email_cipher',
-            'phone_cipher',
+            'profile_pic',
             # ... any other safe fields ...
         ]
