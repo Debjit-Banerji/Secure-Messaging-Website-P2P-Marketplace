@@ -44,7 +44,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "username", "email", "password"]
+        fields = ["id", "username", "email", "password", "public_key"]
         extra_kwargs = {"password": {"write_only": True}}  # Hide password in response
 
     def create(self, validated_data):
@@ -61,9 +61,8 @@ def register_user(request):
     password = request.data.get("password")
     bio = request.data.get("bio", "")
     phone = request.data.get("phone", "")
-    email_cipher = request.data.get("email_cipher")
-    rsaPublicKey = request.data.get("rsa_public_key")
-    dhPublicKey = request.data.get("dh_public_key")
+    public_key = request.data.get("public_key", "")
+    print(public_key)
     try:
         user = User.objects.create_user(
             username=username,
@@ -71,7 +70,7 @@ def register_user(request):
             password=password,
             bio=bio,
             phone=phone,
-            email_cipher = email_cipher,
+            public_key=public_key,
         )
     except IntegrityError:
         # This typically indicates the username already exists.
@@ -183,11 +182,12 @@ def send_chat(request):
     sender = request.user
     receiver_id = request.data.get("receiver")
     message = request.data.get("message", "")
+    nonce = request.data.get("nonce", "")
     if not receiver_id or not message:
         return Response({"error": "Receiver and message are required."}, status=status.HTTP_400_BAD_REQUEST)
     
     receiver = get_object_or_404(User, id=receiver_id)
-    chat = ChatMessage.objects.create(sender=sender, receiver=receiver, message=message)
+    chat = ChatMessage.objects.create(sender=sender, receiver=receiver, message=message, nonce=nonce)
     serializer = ChatMessageSerializer(chat)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
