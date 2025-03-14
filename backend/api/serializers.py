@@ -3,6 +3,8 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from .models import Group, ChatMessage
+from rest_framework import serializers
+from .models import Product, Purchase
 
 User = get_user_model()
 
@@ -59,3 +61,13 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'profile_pic',
             # ... any other safe fields ...
         ]
+
+class ProductSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = '__all__'
+
+class PurchaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Purchase
+        fields = '__all__'

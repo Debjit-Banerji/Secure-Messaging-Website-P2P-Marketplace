@@ -1,6 +1,4 @@
 from django.shortcuts import render
-
-# Create your views here.
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -23,6 +21,25 @@ from .serializers import (
     GroupSerializer,
     ChatMessageSerializer
 )
+from django.core.mail import send_mail
+from django.http import JsonResponse
+from .models import OTP
+import random
+from django.conf import settings
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from django.db import transaction
+from django.core.mail import send_mail
+from django.shortcuts import get_object_or_404
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.response import Response
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
+from .models import Product, Purchase
+from .serializers import ProductSerializer
+from django.utils import timezone
+from datetime import timedelta
+
 
 User = get_user_model()
 
@@ -257,3 +274,117 @@ def profile_view(request):
     #         serializer.save()
     #         return Response(serializer.data, status=status.HTTP_200_OK)
     #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def send_otp_email(request):
+    email = request.data.get("email")
+    if not email:
+        return Response({"error": "Email is required."}, status=400)
+
+    user = User.objects.filter(email=email).first()
+    if not user:
+        return Response({"error": "User not found."}, status=404)
+
+    # Generate new OTP
+    otp_code = random.randint(100000, 999999)
+    otp_obj, created = OTP.objects.update_or_create(
+    user=user,
+    defaults={
+        "otp": otp_code,
+        "expires_at": timezone.now() + timedelta(minutes=10)
+    }
+)
+    
+    # Send OTP email
+    try:
+        send_mail(
+            'Your OTP Code',
+            f'Your OTP is {otp_code}. It is valid for 10 minutes.',
+            settings.DEFAULT_FROM_EMAIL,  # Use Django settings
+            [email],
+            fail_silently=False,
+        )
+        return Response({"message": "OTP sent successfully."}, status=200)
+    except Exception as e:
+        return Response({"error": f"Failed to send email: {str(e)}"}, status=500)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def verify_otp(request):
+    email = request.data.get("email")
+    otp_code = request.data.get("otp")
+
+    if not email or not otp_code:
+        return Response({"error": "Email and OTP are required."}, status=400)
+
+    user = User.objects.filter(email=email).first()
+    if not user:
+        return Response({"error": "User not found."}, status=404)
+
+    otp_obj = OTP.objects.filter(user=user, otp=otp_code).first()
+
+    if not otp_obj:
+        return Response({"error": "Invalid OTP."}, status=400)
+
+    if not otp_obj.is_valid():
+        return Response({"error": "OTP has expired."}, status=400)
+
+    # OTP is valid, proceed with authentication or password reset
+    return Response({"message": "OTP verified successfully."}, status=200)
+
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([SessionAuthentication, TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def products(request):
+    if request.method == 'GET':
+        products = Product.objects.filter(sold=False)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+
+    elif request.method == 'POST':
+        serializer = ProductSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+
+@api_view(['POST'])
+@authentication_classes([SessionAuthentication, TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def buy_product(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+
+    # Prevent self-purchase
+    if product.user == request.user:
+        return Response({"error": "You cannot purchase your own product."}, status=400)
+
+    # Check if already sold
+    if product.sold:
+        return Response({"error": "Product is already sold."}, status=400)
+
+    with transaction.atomic():
+        product.sold = True
+        product.save()
+        
+        # Ensure the purchase is only created once
+        purchase, created = Purchase.objects.get_or_create(product=product, buyer=request.user)
+        if not created:
+            return Response({"error": "You have already purchased this product."}, status=400)
+
+        # Notify the seller
+        seller_email = product.user.email
+        send_mail(
+            'Your Product is Sold!',
+            f'Your product "{product.name}" has been purchased by {request.user.username}.',
+            'your_email@gmail.com',
+            [seller_email],
+            fail_silently=False,
+        )
+
+    return Response({"message": "Product purchased successfully!"})
+
