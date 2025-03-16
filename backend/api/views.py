@@ -1,12 +1,15 @@
 from django.shortcuts import render
+
+# Create your views here.
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework import serializers
 # from django.contrib.auth.models import User
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
@@ -200,11 +203,14 @@ def send_chat(request):
     receiver_id = request.data.get("receiver")
     message = request.data.get("message", "")
     nonce = request.data.get("nonce", "")
+    type = request.data.get("type", "")
+    fileType = request.data.get("fileType", "")
+    fileName = request.data.get("fileName", "")
     if not receiver_id or not message:
         return Response({"error": "Receiver and message are required."}, status=status.HTTP_400_BAD_REQUEST)
     
     receiver = get_object_or_404(User, id=receiver_id)
-    chat = ChatMessage.objects.create(sender=sender, receiver=receiver, message=message, nonce=nonce)
+    chat = ChatMessage.objects.create(sender=sender, receiver=receiver, message=message, nonce=nonce, type=type, fileType=fileType, fileName=fileName)
     serializer = ChatMessageSerializer(chat)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -336,21 +342,83 @@ def verify_otp(request):
 
 
 
-@api_view(['GET', 'POST'])
-@authentication_classes([SessionAuthentication, TokenAuthentication])
+@api_view(['GET', 'POST', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
-def products(request):
+@parser_classes([MultiPartParser, FormParser])  # ✅ Added to handle image uploads
+def products(request, product_id=None):
+    """
+    Handles:
+    - GET: Fetch products (all or filtered)
+    - POST: Create a new product
+    - PUT: Edit an existing product (requires product_id)
+    - DELETE: Delete an existing product (requires product_id)
+    """
+
     if request.method == 'GET':
+        username = request.GET.get('username')
+        query = request.GET.get('q', '')
+
         products = Product.objects.filter(sold=False)
-        serializer = ProductSerializer(products, many=True)
+
+        if username:
+            products = products.filter(user__username=username)
+        elif query:
+            products = products.filter(
+                Q(name__icontains=query) | Q(description__icontains=query)
+            )
+
+        serializer = ProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        serializer = ProductSerializer(data=request.data)
+        print("Received Data:", request.data)  # Debugging
+        print("Received FILES:", request.FILES)  # Debugging
+
+        user_id = request.data.get("user")  # ✅ Expecting User ID now
+
+        try:
+            user = User.objects.get(id=user_id)  # ✅ Fetch User by ID
+        except User.DoesNotExist:
+            return Response({"user": ["User not found."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        product_data = request.data.copy()
+        product_data["image"] = request.FILES.get("image")  # ✅ Ensure image is handled
+
+        serializer = ProductSerializer(data=product_data, context={'request': request})
         if serializer.is_valid():
-            serializer.save(user=request.user)
-            return Response(serializer.data, status=201)
-        return Response(serializer.errors, status=400)
+            serializer.save(user=user, image=request.FILES.get("image"))  # ✅ Save image explicitly
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method in ['PUT', 'DELETE']:
+        if not product_id:
+            return Response({"error": "Product ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        product = get_object_or_404(Product, id=product_id)
+
+        # Verify the user owns the product
+        if product.user != request.user:
+            return Response(
+                {"error": "You can only modify your own products"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if request.method == 'PUT':
+            product_data = request.data.copy()
+            if "image" in request.FILES:  # ✅ Ensure updated image is handled
+                product_data["image"] = request.FILES.get("image")
+
+            serializer = ProductSerializer(product, data=product_data, partial=True, context={'request': request})
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        elif request.method == 'DELETE':
+            product.delete()
+            return Response({"message": "Product deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['POST'])
@@ -387,4 +455,3 @@ def buy_product(request, product_id):
         )
 
     return Response({"message": "Product purchased successfully!"})
-
