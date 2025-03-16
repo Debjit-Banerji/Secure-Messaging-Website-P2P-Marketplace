@@ -12,12 +12,14 @@ urlpatterns = [
     path('search-friends-groups/', search_friends_groups, name='search-friends-groups'),
     path('chats/<int:user_id>/', get_chats, name='get-chats'),
     path('send-chat/', send_chat, name='send-chat'),
+
     path('contacts/add/', add_contact, name='add-contact'),
     path('contacts/', list_contacts, name='list-contacts'),
     path('contacts/remove/', remove_contact, name='remove-contact'),
     path('profile/', profile_view, name='profile'),
     path('send-otp/', send_otp_email, name="send-otp"),
     path('verify-otp/', verify_otp, name="verify-otp"),
-    path('products/', products, name="products"),
+    path('products/', products, name="products-list-create"),
+    path('products/<int:product_id>/', products, name='product-edit-delete'),  # Handles PUT & DELETE
     path('buy/<int:product_id>/', buy_product, name="buy-product"),
 ]
