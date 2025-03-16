@@ -45,7 +45,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ChatMessage
-        fields = ["id", "sender", "sender_username", "receiver", "receiver_username", "message", "timestamp", "nonce"]
+        fields = ["id", "sender", "sender_username", "receiver", "receiver_username", "message", "timestamp", "nonce", "type", "fileType", "fileName"]
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -63,9 +63,18 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
 
 class ProductSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(required=False)  # ✅ Handles image properly
+
     class Meta:
         model = Product
         fields = '__all__'
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        request = self.context.get("request")
+        if instance.image and request:
+            representation["image"] = request.build_absolute_uri(instance.image.url)  # ✅ Returns absolute URL
+        return representation
 
 class PurchaseSerializer(serializers.ModelSerializer):
     class Meta:
