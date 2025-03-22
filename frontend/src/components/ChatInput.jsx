@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from "react";
 import styled from "styled-components";
 import { BsEmojiSmile } from "react-icons/bs";
@@ -7,7 +8,7 @@ import { BiMicrophone } from "react-icons/bi";
 import { FaFileImage, FaFileAudio, FaFileVideo, FaFileAlt } from "react-icons/fa";
 import Picker from "emoji-picker-react";
 
-export default function ChatInput({ handleSendMsg }) {
+export default function ChatInput({ handleSendMsg, isGroup }) {
   const [msg, setMsg] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAttachOptions, setShowAttachOptions] = useState(false);
@@ -23,7 +24,11 @@ export default function ChatInput({ handleSendMsg }) {
   const sendChat = (event) => {
     event.preventDefault();
     if (msg.trim().length > 0) {
-      handleSendMsg({ type: "text", content: msg });
+      handleSendMsg({
+        type: "text",
+        content: msg,
+        isGroup, // Pass whether it's a group chat
+      });
       setMsg("");
     }
   };
@@ -42,20 +47,20 @@ export default function ChatInput({ handleSendMsg }) {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = async () => {
-          const base64String = reader.result.split(",")[1]; // Remove Base64 prefix
-          const fileBytes = Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0)); // Convert Base64 to Uint8Array
+        const base64String = reader.result.split(",")[1]; // Remove Base64 prefix
+        const fileBytes = Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0)); // Convert Base64 to Uint8Array
 
-          handleSendMsg({ 
-              type: "file", 
-              fileType: file.type, 
-              content: fileBytes, 
-          });
+        handleSendMsg({
+          type: "file",
+          fileType: file.type,
+          content: fileBytes,
+          isGroup, // Pass whether it's a group chat
+        });
       };
       reader.readAsDataURL(file);
       setShowAttachOptions(false);
     }
   };
-
 
   return (
     <Container>
@@ -119,7 +124,7 @@ export default function ChatInput({ handleSendMsg }) {
   );
 }
 
-// Styled Components
+// Styled Components (unchanged)
 const Container = styled.div`
   position: relative;
   display: flex;
