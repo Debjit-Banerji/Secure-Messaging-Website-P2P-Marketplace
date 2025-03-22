@@ -1,3 +1,5 @@
+
+// new with group setting h 
 import React, { useState, useEffect, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import styled from "styled-components";
@@ -9,6 +11,8 @@ import { deriveSharedKey, decryptMessage, encryptMessage, generateKeypair } from
 
 export default function ChatArea({ currentChat, socket }) {
   const [messages, setMessages] = useState([]);
+  const [messageStatus, setMessageStatus] = useState({}); // Track message status (sent, delivered, read)
+  const [messageReadBy, setMessageReadBy] = useState({}); // Track which members have read each message
   const scrollRef = useRef();
   const sentMessages = useSelector((state) => state.chat.sent_chats);
   const receivedMessages = useSelector((state) => state.chat.received_chats);
@@ -16,6 +20,7 @@ export default function ChatArea({ currentChat, socket }) {
   const dispatch = useDispatch();
 
   const [encryptionKey, setEncryptionKey] = useState(null);
+  const isGroup = currentChat?.isGroup || false; // Check if it's a group chat
 
   useEffect(() => {
     let isMounted = true; // Flag to track component mount status
@@ -23,10 +28,12 @@ export default function ChatArea({ currentChat, socket }) {
     const fetchChatsAndKey = async () => {
       try {
         dispatch(getChats({ ...currentChat }));
-        const keyPair = await generateKeypair(curPassword);
-        const key = await deriveSharedKey(keyPair.privateKey, currentChat.public_key);
-        if (isMounted) {
-          setEncryptionKey(key);
+        if (!isGroup) {
+          const keyPair = await generateKeypair(curPassword);
+          const key = await deriveSharedKey(keyPair.privateKey, currentChat.public_key);
+          if (isMounted) {
+            setEncryptionKey(key);
+          }
         }
       } catch (error) {
         console.error("Error deriving shared key:", error);
@@ -45,79 +52,108 @@ export default function ChatArea({ currentChat, socket }) {
   }, [encryptionKey]);
 
   useEffect(() => {
-    if (encryptionKey !== null) {
+    if (encryptionKey !== null || isGroup) {
       const decryptMessages = async () => {
         try {
           const mergedMessages = [...sentMessages, ...receivedMessages]
             .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  
+
           const decryptedMessages = await Promise.all(
             mergedMessages.map(async (message) => ({
               ...message,
-              content: await decryptMessage(encryptionKey, message.nonce, message.message),
+              content: isGroup
+                ? message.message // No decryption for group messages
+                : await decryptMessage(encryptionKey, message.nonce, message.message),
             }))
           );
 
           console.log(decryptedMessages);
-  
           setMessages(decryptedMessages);
         } catch (error) {
           console.error("Error decrypting messages:", error);
         }
       };
-  
+
       decryptMessages();
     }
-  }, [sentMessages, receivedMessages, encryptionKey]);
-  
+  }, [sentMessages, receivedMessages, encryptionKey, isGroup]);
 
   const handleSendMsg = async (msg) => {
-    if (encryptionKey !== null) {
+    if (encryptionKey !== null || isGroup) {
       try {
-        console.log("Original Base-64: "+msg)
-        const encryptionRes = await encryptMessage(encryptionKey, msg.content);
-        // console.log("Encrypted Message:", encryptionRes);
+        let encryptedMessage;
+        if (!isGroup) {
+          encryptedMessage = await encryptMessage(encryptionKey, msg.content);
+        }
 
         const temp = {
           receiver: currentChat.id,
-          message: encryptionRes.ciphertext,
-          nonce: encryptionRes.nonce,
+          message: isGroup ? msg.content : encryptedMessage.ciphertext,
+          nonce: isGroup ? null : encryptedMessage.nonce,
           type: msg.type,
           fileType: msg.fileType || null,
           fileName: msg.fileName || null,
+          isGroup, // Include whether it's a group message
         };
         dispatch(sendChat({ ...temp }));
+
+        // Update message status (sent)
+        setMessageStatus((prev) => ({
+          ...prev,
+          [temp.messageId]: "sent",
+        }));
+
+        // Simulate message delivery and read status (for demo purposes)
+        setTimeout(() => {
+          setMessageStatus((prev) => ({
+            ...prev,
+            [temp.messageId]: "delivered",
+          }));
+        }, 1000);
+
+        setTimeout(() => {
+          setMessageStatus((prev) => ({
+            ...prev,
+            [temp.messageId]: "read",
+          }));
+        }, 2000);
       } catch (error) {
-        console.error("Error encrypting message:", error);
+        console.error("Error sending message:", error);
       }
     }
   };
 
   const handleFileClick = (message) => {
-
-    console.log("ChatArea: " + message)
+    console.log("ChatArea: " + message);
     // Convert Base64 to Blob
     const byteCharacters = atob(message);
     const byteNumbers = new Array(byteCharacters.length).fill(0).map((_, i) => byteCharacters.charCodeAt(i));
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: message.fileType });
-  
+
     // Create a Blob URL
     const blobUrl = URL.createObjectURL(blob);
-  
+
     // Create a temporary download link
     const link = document.createElement("a");
     link.href = blobUrl;
     link.download = message.fileName || "download";
     document.body.appendChild(link);
-  
+
     // Simulate a click to open in a relevant app
     link.click();
-  
+
     // Cleanup: Remove link after opening
     document.body.removeChild(link);
     URL.revokeObjectURL(blobUrl);
-  };  
+  };
+
+  // Check if a message is read by all members
+  const isMessageReadByAll = (messageId) => {
+    if (!isGroup) return false; // Only for group chats
+    const readBy = messageReadBy[messageId] || [];
+    return readBy.length === currentChat.members.length;
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -132,9 +168,12 @@ export default function ChatArea({ currentChat, socket }) {
             <div className="online-indicator"></div>
           </div>
           <div className="username">
-            <h3>{currentChat.username}</h3>
-            <span className="status">Online</span>
+            <h3>{currentChat.username || currentChat.name}</h3>
+            <span className="status">
+              {isGroup ? `${currentChat.members?.length || 0} members` : "Online"}
+            </span>
           </div>
+          {/* Group Settings button has been removed */}
         </div>
         <div className="actions">
           <button className="action-btn">
@@ -148,35 +187,47 @@ export default function ChatArea({ currentChat, socket }) {
           </button>
         </div>
       </div>
+
       <div className="chat-messages">
         {messages.length > 0 &&
           messages.map((message) => {
             const fromSelf = message.sender !== currentChat.id;
+            const isReadByAll = isMessageReadByAll(message.messageId); // Check if message is read by all members
             return (
               <div ref={scrollRef} key={uuidv4()}>
                 <div className={`message ${fromSelf ? "sent" : "received"}`}>
                   <div className="content">
                     {message.type === "file" ? (
-                    <div className="file-box">
-                      <p>{message.fileName} ({message.fileType})</p>
-                      <a href={`data:${message.fileType};base64,${message.content}`} target="_blank" rel="noopener noreferrer">
-                        Open File
-                      </a>
+                      <div className="file-box">
+                        <p>{message.fileName} ({message.fileType})</p>
+                        <a href={`data:${message.fileType};base64,${message.content}`} target="_blank" rel="noopener noreferrer">
+                          Open File
+                        </a>
+                      </div>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                    <div className="message-status">
+                      {messageStatus[message.messageId] === "read" ? (
+                        <span style={{ color: isReadByAll ? "#38d77a" : "#b8c7eb" }}>✓✓</span>
+                      ) : messageStatus[message.messageId] === "delivered" ? (
+                        <span>✓✓</span>
+                      ) : messageStatus[message.messageId] === "sent" ? (
+                        <span>✓</span>
+                      ) : null}
                     </div>
-                  ) : (
-                    <p>{message.content}</p>
-                  )}
                   </div>
                 </div>
               </div>
             );
           })}
       </div>
-      <ChatInput handleSendMsg={handleSendMsg} />
+      <ChatInput handleSendMsg={handleSendMsg} isGroup={isGroup} />
     </Container>
   );
 }
 
+// Styled Components (unchanged)
 const Container = styled.div`
   display: grid;
   width: 80%;
@@ -186,65 +237,72 @@ const Container = styled.div`
   overflow: hidden;
   background: linear-gradient(135deg, #1a1f36 0%, #121420 100%);
   border-radius: 0 10px 10px 0;
-  
+
   .chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 2rem;
+  background-color: rgba(26, 28, 47, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+
+  .user-details {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 0 2rem;
-    background-color: rgba(26, 28, 47, 0.8);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
-    
-    .user-details {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      
-      .avatar {
-        position: relative;
-        
-        img {
-          height: 3rem;
-          width: 3rem;
-          border-radius: 50%;
-          border: 2px solid #5d8bfc;
-          object-fit: cover;
-        }
-        
-        .online-indicator {
-          position: absolute;
-          width: 12px;
-          height: 12px;
-          background-color: #38d77a;
-          border-radius: 50%;
-          bottom: 2px;
-          right: 2px;
-          border: 2px solid #1a1c2f;
-        }
+    gap: 1rem;
+    flex-grow: 1;
+
+    .avatar {
+      position: relative;
+
+      img {
+        height: 3rem;
+        width: 3rem;
+        border-radius: 50%;
+        border: 2px solid #5d8bfc;
+        object-fit: cover;
       }
-      
-      .username {
-        display: flex;
-        flex-direction: column;
-        
-        h3 {
-          color: #f8f9fe;
-          margin: 0;
-          font-size: 1.2rem;
-        }
-        
-        .status {
-          color: #b8c7eb;
-          font-size: 0.8rem;
-        }
+
+      .online-indicator {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background-color: #38d77a;
+        border-radius: 50%;
+        bottom: 2px;
+        right: 2px;
+        border: 2px solid #1a1c2f;
       }
     }
-    
+
+    .username {
+      display: flex;
+      flex-direction: column;
+      min-width: 0; /* Allows text truncation */
+
+      h3 {
+        color: #f8f9fe;
+        margin: 0;
+        font-size: 1.2rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .status {
+        color: #b8c7eb;
+        font-size: 0.8rem;
+      }
+    }
+  }
+
+}
+
     .actions {
       display: flex;
       gap: 1rem;
-      
+
       .action-btn {
         background: none;
         border: none;
@@ -254,7 +312,7 @@ const Container = styled.div`
         padding: 0.5rem;
         border-radius: 50%;
         transition: all 0.2s;
-        
+
         &:hover {
           background-color: rgba(93, 139, 252, 0.15);
           color: #5d8bfc;
@@ -262,7 +320,7 @@ const Container = styled.div`
       }
     }
   }
-  
+
   .chat-messages {
     padding: 1rem 2rem;
     display: flex;
@@ -277,11 +335,11 @@ const Container = styled.div`
       ),
       radial-gradient(circle at top right, rgba(93, 139, 252, 0.08), transparent 70%),
       radial-gradient(circle at bottom left, rgba(79, 132, 245, 0.08), transparent 70%);
-    
+
     .message {
       display: flex;
       align-items: center;
-      
+
       .content {
         max-width: 65%;
         overflow-wrap: break-word;
@@ -290,7 +348,7 @@ const Container = styled.div`
         border-radius: 18px;
         color: #f8f9fe;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-        
+
         p {
           margin: 0;
           line-height: 1.4;
@@ -332,21 +390,28 @@ const Container = styled.div`
             }
           }
         }
+
+        .message-status {
+          text-align: right;
+          font-size: 0.8rem;
+          color: #b8c7eb;
+          margin-top: 0.5rem;
+        }
       }
     }
-    
+
     .sent {
       justify-content: flex-end;
-      
+
       .content {
         background-color: #5d8bfc;
         border-bottom-right-radius: 4px;
       }
     }
-    
+
     .received {
       justify-content: flex-start;
-      
+
       .content {
         background-color: #2a304f;
         border-bottom-left-radius: 4px;
