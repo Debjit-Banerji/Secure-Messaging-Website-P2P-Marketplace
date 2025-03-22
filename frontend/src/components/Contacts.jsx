@@ -1,50 +1,188 @@
+
+// new  one with group chat featuring
+
 import React, { useState, useEffect } from "react";
 import styled from "styled-components";
+import { MdGroupAdd, MdSettings } from "react-icons/md";
 import DefaultProfilePic from "../assets/profileicon.png";
 import { useDispatch, useSelector } from "react-redux";
 import { getUserData } from "../store/slices/user-slice";
+import GroupModal from "./GroupModal";
+import GroupSettingsModal from "./GroupSettingsModal";
 
 export default function Contacts({ contacts, changeChat }) {
   const [currentSelected, setCurrentSelected] = useState(undefined);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showGroupSettingsModal, setShowGroupSettingsModal] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [currentChat, setCurrentChat] = useState(null); // Added state to track current chat
   const curUser = useSelector((state) => state.user.user);
   const dispatch = useDispatch();
 
   useEffect(() => {
     dispatch(getUserData());
-  }, [])
+  }, []);
 
-  useEffect(() => {
-    // console.log(contacts);
-  }, [contacts]);
+  // Handle group creation
+  const handleCreateGroup = (groupData) => {
+    // Format members correctly as objects with id and username
+    const formattedMembers = groupData.members.map(memberId => {
+      const contact = contacts.find(c => c.id === memberId);
+      return {
+        id: memberId,
+        username: contact ? contact.username : "Unknown"
+      };
+    });
 
-  useEffect(() => {
-    // console.log(curUser);
-  }, [curUser]);
-
-  const changeCurrentChat = (index, contact) => {
-    setCurrentSelected(index);
-    changeChat(contact);
+    const newGroup = {
+      id: `group-${Date.now()}`,
+      name: groupData.name,
+      members: formattedMembers,
+      isGroup: true,
+    };
+    setGroups([...groups, newGroup]);
+    setShowGroupModal(false);
   };
+
+  // Open group settings for a specific group
+  const openGroupSettings = (group) => {
+    setSelectedGroup(group);
+    setShowGroupSettingsModal(true);
+  };
+
+  // Handle adding a member to the group
+  const handleAddMember = (memberId) => {
+    if (!selectedGroup) return;
+
+    const contact = contacts.find(c => c.id === memberId);
+    if (!contact) return;
+
+    const memberToAdd = {
+      id: memberId,
+      username: contact.username
+    };
+
+    // Check if member is already in the group
+    if (selectedGroup.members.some(m => m.id === memberId)) return;
+
+    // Update the selected group with the new member
+    const updatedGroup = {
+      ...selectedGroup,
+      members: [...selectedGroup.members, memberToAdd]
+    };
+
+    // Update the groups array
+    const updatedGroups = groups.map(g => g.id === selectedGroup.id ? updatedGroup : g);
+    setGroups(updatedGroups);
+    setSelectedGroup(updatedGroup);
+    
+    // Update the current chat if it's the same group that's being modified
+    if (currentChat && currentChat.id === selectedGroup.id) {
+      changeChat(updatedGroup);
+    }
+  };
+
+  // Handle removing a member from the group
+  const handleRemoveMember = (memberId) => {
+    if (!selectedGroup) return;
+
+    // Update the selected group by removing the member
+    const updatedGroup = {
+      ...selectedGroup,
+      members: selectedGroup.members.filter(m => m.id !== memberId)
+    };
+
+    // Update the groups array
+    const updatedGroups = groups.map(g => g.id === selectedGroup.id ? updatedGroup : g);
+    setGroups(updatedGroups);
+    setSelectedGroup(updatedGroup);
+    
+    // Update the current chat if it's the same group that's being modified
+    if (currentChat && currentChat.id === selectedGroup.id) {
+      changeChat(updatedGroup);
+    }
+  };
+
+  // Change the current chat (individual or group)
+  const changeCurrentChat = (index, chat) => {
+    setCurrentSelected(index);
+    setCurrentChat(chat); // Store the current chat locally
+    changeChat(chat);
+  };
+
   return (
     <Container>
       <div className="title">
         <h2>Contacts</h2>
+        <button className="create-group-btn" onClick={() => setShowGroupModal(true)}>
+          <MdGroupAdd /> Create Group
+        </button>
       </div>
+
+      {/* Group Modal */}
+      {showGroupModal && (
+        <GroupModal
+          contacts={contacts}
+          onClose={() => setShowGroupModal(false)}
+          onCreateGroup={handleCreateGroup}
+        />
+      )}
+
+      {/* Group Settings Modal */}
+      {showGroupSettingsModal && selectedGroup && (
+        <GroupSettingsModal
+          group={selectedGroup}
+          contacts={contacts}
+          onClose={() => setShowGroupSettingsModal(false)}
+          onAddMember={handleAddMember}
+          onRemoveMember={handleRemoveMember}
+        />
+      )}
+
+      {/* Contacts and Groups List */}
       <div className="contacts">
-        {contacts && contacts.length > 0 && contacts.map((contact, index) => {
-          return (
+        {/* Groups */}
+        {groups.map((group, index) => (
+          <div
+            key={group.id}
+            className={`contact ${
+              currentChat && currentChat.id === group.id ? "selected" : ""
+            }`}
+            onClick={() => changeCurrentChat(index, group)}
+          >
+            <div className="avatar">
+              <img src={DefaultProfilePic} alt="" />
+            </div>
+            <div className="username">
+              <h3>{group.name}</h3>
+              <p className="last-message">{group.members.length} members</p>
+            </div>
+            {/* Add settings button for groups */}
+            <button 
+              className="settings-btn" 
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent triggering the changeCurrentChat
+                openGroupSettings(group);
+              }}
+            >
+              <MdSettings />
+            </button>
+          </div>
+        ))}
+
+        {/* Individual Contacts */}
+        {contacts && contacts.length > 0 ? (
+          contacts.map((contact, index) => (
             <div
               key={contact.id}
               className={`contact ${
-                index === currentSelected ? "selected" : ""
+                currentChat && currentChat.id === contact.id ? "selected" : ""
               }`}
               onClick={() => changeCurrentChat(index, contact)}
             >
               <div className="avatar">
-                <img
-                  src={DefaultProfilePic}
-                  alt=""
-                />
+                <img src={DefaultProfilePic} alt="" />
                 <div className="status online"></div>
               </div>
               <div className="username">
@@ -52,20 +190,18 @@ export default function Contacts({ contacts, changeChat }) {
                 <p className="last-message">Click to start chatting</p>
               </div>
             </div>
-          );
-        })}
-        {contacts && contacts.length === 0 && (
+          ))
+        ) : (
           <div className="no-contacts">
             <p>No contacts yet. Start by adding friends!</p>
           </div>
         )}
       </div>
+
+      {/* Current User */}
       <div className="current-user">
         <div className="avatar">
-          <img
-            src={DefaultProfilePic}
-            alt="avatar"
-          />
+          <img src={DefaultProfilePic} alt="avatar" />
           <div className="status online"></div>
         </div>
         <div className="username">
@@ -76,6 +212,8 @@ export default function Contacts({ contacts, changeChat }) {
     </Container>
   );
 }
+
+// Styled Components
 const Container = styled.div`
   display: grid;
   width: 100%;
@@ -85,19 +223,36 @@ const Container = styled.div`
   border-radius: 0.5rem;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
   overflow: hidden;
-  
+
   .title {
     padding: 1.2rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     background: linear-gradient(90deg, rgba(15, 15, 50, 0.7) 0%, rgba(20, 20, 60, 0.7) 100%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
     h2 {
       color: #b69fff;
       font-size: 1.3rem;
       font-weight: 600;
       margin: 0;
-      text-align: center;
-      letter-spacing: 1px;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .create-group-btn {
+      background: #5d8bfc;
+      border: none;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+
+      &:hover {
+        background: #4a78e8;
+      }
     }
   }
 
@@ -109,20 +264,20 @@ const Container = styled.div`
     gap: 0.8rem;
     padding: 1rem 0.8rem;
     background-color: rgba(10, 10, 35, 0.4);
-    
+
     &::-webkit-scrollbar {
       width: 6px;
     }
-    
+
     &::-webkit-scrollbar-track {
       background: rgba(255, 255, 255, 0.03);
       border-radius: 10px;
     }
-    
+
     &::-webkit-scrollbar-thumb {
       background: linear-gradient(180deg, #9a86f3 0%, #7d6bd4 100%);
       border-radius: 10px;
-      
+
       &:hover {
         background: linear-gradient(180deg, #b69fff 0%, #9a86f3 100%);
       }
@@ -153,17 +308,17 @@ const Container = styled.div`
       position: relative;
       border: 1px solid rgba(154, 134, 243, 0.1);
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-      
+
       &:hover {
         background: linear-gradient(120deg, rgba(40, 40, 85, 0.5) 0%, rgba(45, 45, 90, 0.5) 100%);
         transform: translateY(-2px);
         border: 1px solid rgba(182, 159, 255, 0.4);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
       }
-      
+
       .avatar {
         position: relative;
-        
+
         img {
           height: 3.2rem;
           width: 3.2rem;
@@ -174,7 +329,7 @@ const Container = styled.div`
           transition: all 0.2s ease;
           background-color: #151540;
         }
-        
+
         .status {
           position: absolute;
           bottom: 0;
@@ -183,12 +338,12 @@ const Container = styled.div`
           height: 12px;
           border-radius: 50%;
           border: 2px solid #101035;
-          
+
           &.online {
             background: linear-gradient(135deg, #56d364 0%, #44b700 100%);
             box-shadow: 0 0 5px rgba(68, 183, 0, 0.6);
           }
-          
+
           &.offline {
             background-color: #a0a0a0;
           }
@@ -199,14 +354,15 @@ const Container = styled.div`
         display: flex;
         flex-direction: column;
         gap: 0.3rem;
-        
+        flex: 1;
+
         h3 {
           color: #e8e8ff;
           font-size: 1rem;
           font-weight: 600;
           margin: 0;
         }
-        
+
         .last-message {
           color: #b4b4d5;
           font-size: 0.8rem;
@@ -217,21 +373,40 @@ const Container = styled.div`
           max-width: 150px;
         }
       }
+
+      .settings-btn {
+        background: transparent;
+        border: none;
+        color: #b4b4d5;
+        font-size: 1.2rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.2rem;
+        border-radius: 50%;
+        transition: all 0.2s ease;
+
+        &:hover {
+          color: #ffffff;
+          background-color: rgba(154, 134, 243, 0.2);
+        }
+      }
     }
 
     .selected {
       background: linear-gradient(120deg, rgba(90, 70, 190, 0.35) 0%, rgba(75, 60, 170, 0.35) 100%);
       border: 1px solid rgba(182, 159, 255, 0.6);
       box-shadow: 0 3px 10px rgba(154, 134, 243, 0.2);
-      
+
       .avatar img {
         border-color: #b69fff;
       }
-      
+
       &:hover {
         background: linear-gradient(120deg, rgba(100, 80, 200, 0.4) 0%, rgba(85, 70, 180, 0.4) 100%);
       }
-      
+
       .username h3 {
         color: #ffffff;
       }
@@ -247,10 +422,10 @@ const Container = styled.div`
     gap: 1rem;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-    
+
     .avatar {
       position: relative;
-      
+
       img {
         height: 3.5rem;
         width: 3.5rem;
@@ -260,7 +435,7 @@ const Container = styled.div`
         box-shadow: 0 0 10px rgba(182, 159, 255, 0.3);
         background-color: #151540;
       }
-      
+
       .status {
         position: absolute;
         bottom: 0;
@@ -269,7 +444,7 @@ const Container = styled.div`
         height: 12px;
         border-radius: 50%;
         border: 2px solid #0f0f2d;
-        
+
         &.online {
           background: linear-gradient(135deg, #56d364 0%, #44b700 100%);
           box-shadow: 0 0 5px rgba(68, 183, 0, 0.6);
@@ -280,7 +455,7 @@ const Container = styled.div`
     .username {
       display: flex;
       flex-direction: column;
-      
+
       h2 {
         color: #ffffff;
         font-size: 1.1rem;
@@ -288,7 +463,7 @@ const Container = styled.div`
         margin: 0;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
       }
-      
+
       p {
         color: #56d364;
         font-size: 0.8rem;
@@ -300,7 +475,7 @@ const Container = styled.div`
     @media screen and (max-width: 1080px) {
       gap: 0.5rem;
       padding: 0.8rem 1rem;
-      
+
       .avatar img {
         height: 2.8rem;
         width: 2.8rem;
@@ -311,4 +486,4 @@ const Container = styled.div`
       }
     }
   }
-`;
+      `;
