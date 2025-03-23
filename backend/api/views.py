@@ -38,10 +38,11 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.response import Response
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
-from .models import Product, Purchase
-from .serializers import ProductSerializer
+from .models import Product, Purchase, Group, GroupMembership, GroupMessage
+from .serializers import ProductSerializer, Group, GroupDetailSerializer, GroupListSerializer, GroupMembershipSerializer, GroupSerializer, GroupMessageSerializer, GroupMembership, GroupMessage
 from django.utils import timezone
 from datetime import timedelta
+from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 
 
 User = get_user_model()
@@ -455,3 +456,229 @@ def buy_product(request, product_id):
         )
 
     return Response({"message": "Product purchased successfully!"})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_group(request):
+    """Create a new group with the current user as admin"""
+    name = request.data.get("name")
+    members_data = request.data.get("members", [])  # List of {id, encrypted_key} dictionaries
+    
+    if not name:
+        return Response({"error": "Group name is required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check if a group with this name already exists
+    if Group.objects.filter(name=name).exists():
+        return Response({"error": "A group with this name already exists"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        with transaction.atomic():
+            # Create the group with current user as admin
+            group = Group.objects.create(name=name, admin=request.user)
+            
+            # Add the admin to the group members with their encrypted key
+            admin_key = next((item["encrypted_key"] for item in members_data if item["id"] == str(request.user.id)), None)
+            if admin_key:
+                GroupMembership.objects.create(
+                    user=request.user,
+                    group=group,
+                    encrypted_symmetric_key=admin_key
+                )
+            
+            # Add other members to the group
+            for member_data in members_data:
+                if member_data["id"] == str(request.user.id):
+                    continue  # Skip the admin as they've already been added
+                
+                try:
+                    member = User.objects.get(id=member_data["id"])
+                    GroupMembership.objects.create(
+                        user=member,
+                        group=group,
+                        encrypted_symmetric_key=member_data["encrypted_key"]
+                    )
+                except User.DoesNotExist:
+                    # If a user doesn't exist, skip them but continue with others
+                    continue
+            
+            serializer = GroupDetailSerializer(group)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_group_member(request, group_id):
+    """Add a new member to an existing group"""
+    member_id = request.data.get("member_id")
+    encrypted_key = request.data.get("encrypted_key")
+    
+    if not member_id or not encrypted_key:
+        return Response({"error": "Member ID and encrypted key are required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        group = Group.objects.get(id=group_id)
+        
+        # Check if the user is the admin of the group
+        if group.admin != request.user:
+            return Response({"error": "Only the group admin can add members"}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check if the member exists
+        try:
+            member = User.objects.get(id=member_id)
+        except User.DoesNotExist:
+            return Response({"error": "User does not exist"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if the member is already in the group
+        if GroupMembership.objects.filter(user=member, group=group).exists():
+            return Response({"error": "User is already a member of this group"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Add the member to the group
+        GroupMembership.objects.create(
+            user=member,
+            group=group,
+            encrypted_symmetric_key=encrypted_key
+        )
+        
+        # Get updated group details including all members
+        updated_group_data = GroupDetailSerializer(group).data
+        
+        # Return the updated list of members with their encrypted keys
+        return Response(updated_group_data, status=status.HTTP_200_OK)
+    
+    except Group.DoesNotExist:
+        return Response({"error": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def remove_group_member(request, group_id, member_id):
+    """Remove a member from a group"""
+    try:
+        group = Group.objects.get(id=group_id)
+        
+        # Check if the user is the admin of the group
+        if group.admin != request.user:
+            return Response({"error": "Only the group admin can remove members"}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check if the member exists and is in the group
+        try:
+            member = User.objects.get(id=member_id)
+            membership = GroupMembership.objects.get(user=member, group=group)
+        except (User.DoesNotExist, GroupMembership.DoesNotExist):
+            return Response({"error": "User is not a member of this group"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Cannot remove the admin from their own group
+        if member == group.admin:
+            return Response({"error": "Cannot remove the group admin"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Remove the member
+        membership.delete()
+        
+        # After member removal, admin should update encrypted keys for remaining members
+        # This happens client-side but we need to provide the updated group data
+        updated_group_data = GroupDetailSerializer(group).data
+        
+        return Response(updated_group_data, status=status.HTTP_200_OK)
+    
+    except Group.DoesNotExist:
+        return Response({"error": "Group not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_group_details(request, group_id):
+    """Get details of a specific group"""
+    try:
+        # Check if the user is a member of the group
+        membership = GroupMembership.objects.filter(user=request.user, group_id=group_id).first()
+        if not membership:
+            return Response({"error": "You are not a member of this group"}, status=status.HTTP_403_FORBIDDEN)
+        
+        group = membership.group
+        serializer = GroupDetailSerializer(group)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_user_groups(request):
+    """List all groups where the current user is a member"""
+    groups = Group.objects.filter(groupmembership__user=request.user)
+    serializer = GroupListSerializer(groups, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+# views.py - Add group messaging endpoints
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def send_group_message(request, group_id):
+    """Send a message to a group"""
+    message = request.data.get("message")
+    message_type = request.data.get("type", "text")
+    file_type = request.data.get("fileType", None)
+    file_name = request.data.get("fileName", None)
+    
+    if not message:
+        return Response({"error": "Message content is required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Check if the user is a member of the group
+        membership = GroupMembership.objects.filter(user=request.user, group_id=group_id).first()
+        if not membership:
+            return Response({"error": "You are not a member of this group"}, status=status.HTTP_403_FORBIDDEN)
+        
+        group = membership.group
+        
+        # Create and save the message
+        group_message = GroupMessage.objects.create(
+            group=group,
+            sender=request.user,
+            message=message,
+            type=message_type,
+            fileType=file_type,
+            fileName=file_name
+        )
+        
+        # Return the created message details
+        serializer = GroupMessageSerializer(group_message)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_group_messages(request, group_id):
+    """Get all messages from a group"""
+    try:
+        # Check if the user is a member of the group
+        membership = GroupMembership.objects.filter(user=request.user, group_id=group_id).first()
+        if not membership:
+            return Response({"error": "You are not a member of this group"}, status=status.HTTP_403_FORBIDDEN)
+        
+        group = membership.group
+        
+        # Get messages with optional pagination
+        messages = GroupMessage.objects.filter(group=group).order_by('timestamp')
+        
+        # Add pagination if needed
+        page = request.query_params.get('page')
+        if page:
+            paginator = Paginator(messages, 50)  # 50 messages per page
+            try:
+                messages = paginator.page(page)
+            except (PageNotAnInteger, EmptyPage):
+                messages = paginator.page(1)
+        
+        serializer = GroupMessageSerializer(messages, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

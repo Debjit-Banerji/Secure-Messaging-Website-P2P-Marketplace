@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from .models import Group, ChatMessage
 from rest_framework import serializers
-from .models import Product, Purchase
+from .models import Product, Purchase, Group, GroupMembership, GroupMessage
 
 User = get_user_model()
 
@@ -80,3 +80,48 @@ class PurchaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Purchase
         fields = '__all__'
+
+# serializers.py - Add these serializers
+
+class GroupMembershipSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    encrypted_key = serializers.CharField(source='encrypted_symmetric_key')
+    
+    class Meta:
+        model = GroupMembership
+        fields = ['id', 'username', 'encrypted_key', 'added_at']
+
+class GroupDetailSerializer(serializers.ModelSerializer):
+    admin = UserSerializer(read_only=True)
+    members = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Group
+        fields = ['id', 'name', 'admin', 'members', 'created_at', 'updated_at']
+    
+    def get_members(self, obj):
+        memberships = GroupMembership.objects.filter(group=obj)
+        return GroupMembershipSerializer(memberships, many=True).data
+
+class GroupListSerializer(serializers.ModelSerializer):
+    admin_username = serializers.CharField(source='admin.username', read_only=True)
+    member_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Group
+        fields = ['id', 'name', 'admin_username', 'member_count', 'created_at']
+    
+    def get_member_count(self, obj):
+        return obj.groupmembership_set.count()
+    
+# serializers.py - Add GroupMessage serializer
+
+class GroupMessageSerializer(serializers.ModelSerializer):
+    sender_id = serializers.CharField(source='sender.id', read_only=True)
+    sender_username = serializers.CharField(source='sender.username', read_only=True)
+    
+    class Meta:
+        model = GroupMessage
+        fields = ['id', 'group_id', 'sender_id', 'sender_username', 'message', 
+                 'type', 'fileType', 'fileName', 'timestamp']

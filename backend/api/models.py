@@ -24,12 +24,23 @@ class User(AbstractUser):
         return self.name if self.name else self.username
 
 class Group(models.Model):
-    name = models.CharField(max_length=100)
-    # Use a different related_name to avoid clashing with the built-in User.groups
-    members = models.ManyToManyField(User, related_name='custom_groups', blank=True)
+    name = models.CharField(max_length=100, unique=True)
+    admin = models.ForeignKey(User, related_name='admin_groups', on_delete=models.CASCADE)
+    members = models.ManyToManyField(User, related_name='member_groups', through='GroupMembership', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.name
+
+class GroupMembership(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    group = models.ForeignKey(Group, on_delete=models.CASCADE)
+    encrypted_symmetric_key = models.TextField()  # Encrypted with member's public key
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'group')
 
 class ChatMessage(models.Model):
     sender = models.ForeignKey(User, related_name="sent_messages", on_delete=models.CASCADE)
@@ -95,3 +106,21 @@ class Purchase(models.Model):
         self.product.sold = False  # Mark product as available again
         self.product.save()
         super().delete(*args, **kwargs)
+
+# models.py - Add GroupMessage model
+
+class GroupMessage(models.Model):
+    group = models.ForeignKey(Group, related_name='messages', on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, related_name='group_messages', on_delete=models.CASCADE)
+    message = models.TextField()  # Encrypted message (client-side encryption)
+    type = models.CharField(max_length=20, default='text')  # text, file, etc.
+    fileType = models.CharField(max_length=100, blank=True, null=True)  # For file messages
+    fileName = models.CharField(max_length=255, blank=True, null=True)  # For file messages
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['timestamp']
+    
+    def __str__(self):
+        return f"{self.sender.username} in {self.group.name}: {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
+    
