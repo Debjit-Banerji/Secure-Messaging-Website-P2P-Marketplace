@@ -43,3 +43,9 @@ yarn-error.log
 .env.test.local
 .env.production.local
 frontend/node_modules/
+
+# Ignore SSL certificates and keys
+ssl/
+*.key
+*.crt
+*.pem

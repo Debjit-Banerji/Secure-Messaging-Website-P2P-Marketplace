@@ -63,8 +63,10 @@ REST_FRAMEWORK = {
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React's development server
-    "http://192.168.2.240:3000"
+    "http://localhost:3000",
+    "https://localhost:3000",
+    "http://192.168.2.240:3000",
+    "https://192.168.2.240:3000"
 ]
 
 ROOT_URLCONF = 'backend.urls'
@@ -165,3 +167,9 @@ EMAIL_HOST_USER = 'your_email@gmail.com'
 EMAIL_HOST_PASSWORD = 'your_email_password'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# HTTPS settings
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = False  # Set to True to force HTTPS in production
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
