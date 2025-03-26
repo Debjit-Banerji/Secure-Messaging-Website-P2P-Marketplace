@@ -158,18 +158,11 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
+EMAIL_HOST = 'smtp.gmail.com'   # ✅ Correct host for Gmail
+EMAIL_PORT = 587                # ✅ TLS uses port 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'your_email@gmail.com'
-EMAIL_HOST_PASSWORD = 'your_email_password'
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-
-# HTTPS settings
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = False  # Set to True to force HTTPS in production
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+EMAIL_USE_SSL = False
+EMAIL_HOST_USER = 'debjit22146@iiitd.ac.in'
+EMAIL_HOST_PASSWORD = 'xzmc safh dqlo ngrd'
+DEFFAULT_FROM_EMAIL = EMAIL_HOST_USER
