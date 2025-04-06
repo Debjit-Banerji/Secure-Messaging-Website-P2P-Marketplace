@@ -82,5 +82,3 @@ class LogBlockAdmin(admin.ModelAdmin):
             self.message_user(request, "Blockchain integrity check FAILED! Possible tampering detected.", level='ERROR')
     
     verify_chain_integrity.short_description = "Verify blockchain integrity"
-
-admin.site.register(LogBlock, LogBlockAdmin)
