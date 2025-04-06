@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     User, Group, GroupMembership, ChatMessage, 
-    OTP, Product, Purchase, GroupMessage
+    OTP, Product, Purchase, GroupMessage, LogAction, LogBlock
 )
 
 @admin.register(User)
@@ -55,3 +55,32 @@ class GroupMessageAdmin(admin.ModelAdmin):
     list_filter = ('group', 'type', 'timestamp')
     search_fields = ('group__name', 'sender__username')
     readonly_fields = ('timestamp',)
+
+@admin.register(LogBlock)
+class LogBlockAdmin(admin.ModelAdmin):
+    list_display = ('timestamp', 'user', 'action', 'current_hash', 'previous_hash')
+    list_filter = ('action', 'timestamp', 'user')
+    search_fields = ('user__username', 'action', 'details__icontains', 'current_hash', 'previous_hash') # Search JSON details
+    readonly_fields = ('timestamp', 'user', 'action', 'details', 'previous_hash', 'current_hash') # Make fields read-only in admin
+    ordering = ('-timestamp',) # Show newest first
+
+    def has_add_permission(self, request):
+        return False # Prevent manual creation via admin
+
+    def has_change_permission(self, request, obj=None):
+        return False # Prevent editing via admin
+
+    def has_delete_permission(self, request, obj=None):
+        return False # Prevent deletion via admin
+    
+    actions = ['verify_chain_integrity']
+    def verify_chain_integrity(self, request, queryset):
+        is_valid = LogBlock.verify_chain_integrity()
+        if is_valid:
+            self.message_user(request, "Blockchain integrity verified successfully.")
+        else:
+            self.message_user(request, "Blockchain integrity check FAILED! Possible tampering detected.", level='ERROR')
+    
+    verify_chain_integrity.short_description = "Verify blockchain integrity"
+
+admin.site.register(LogBlock, LogBlockAdmin)

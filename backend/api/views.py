@@ -26,7 +26,7 @@ from .serializers import (
 )
 from django.core.mail import send_mail
 from django.http import JsonResponse
-from .models import OTP
+from .models import OTP, LogBlock, add_log_entry, LogAction
 import random
 from django.conf import settings
 from rest_framework.decorators import api_view
@@ -92,6 +92,7 @@ def register_user(request):
             phone=phone,
             public_key=public_key,
         )
+        add_log_entry(user, LogAction.USER_REGISTER, {'email': email, 'username': username})
     except IntegrityError:
         # This typically indicates the username already exists.
         return Response(
@@ -148,6 +149,7 @@ def update_profile(request):
     serializer = UserProfileUpdateSerializer(user, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
+        add_log_entry(request.user, LogAction.PROFILE_UPDATE, {'updated_fields': list(serializer.validated_data.keys())})
         return Response({"message": "Profile updated successfully!"})
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -229,7 +231,7 @@ def add_contact(request):
     # Optionally, you can check if the contact is already added.
     if contact in request.user.friends.all():
         return Response({"error": "Contact already added."}, status=status.HTTP_400_BAD_REQUEST)
-    
+    add_log_entry(request.user, LogAction.CONTACT_ADD, {'contact_id': contact.id, 'contact_username': contact.username})
     request.user.friends.add(contact)
     return Response({"message": "Contact added successfully!"}, status=status.HTTP_200_OK)
 
@@ -257,8 +259,10 @@ def remove_contact(request):
     contact = get_object_or_404(User, id=contact_id)
     if contact not in request.user.friends.all():
         return Response({"error": "Contact not found in your contacts."}, status=status.HTTP_400_BAD_REQUEST)
-    
+    contact_id_to_log = contact.id # Capture before removing
+    contact_username_to_log = contact.username
     request.user.friends.remove(contact)
+    add_log_entry(request.user, LogAction.CONTACT_REMOVE, {'contact_id': contact_id_to_log, 'contact_username': contact_username_to_log})
     return Response({"message": "Contact removed successfully!"}, status=status.HTTP_200_OK)
 
 @api_view(["GET", "PATCH"])
@@ -319,6 +323,7 @@ def send_otp_email(request):
             [email],
             fail_silently=False,
         )
+        add_log_entry(user, LogAction.OTP_REQUEST, {'email': email})
         return Response({"message": "OTP sent successfully."}, status=200)
     except Exception as e:
         return Response({"error": f"Failed to send email: {str(e)}"}, status=500)
@@ -340,11 +345,14 @@ def verify_otp(request):
     otp_obj = OTP.objects.filter(user=user, otp=otp_code).first()
 
     if not otp_obj:
+        add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Invalid OTP', 'email': email})
         return Response({"error": "Invalid OTP."}, status=400)
 
     if not otp_obj.is_valid():
+        add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Expired OTP', 'email': email})
         return Response({"error": "OTP has expired."}, status=400)
-
+    
+    add_log_entry(user, LogAction.OTP_VERIFY_SUCCESS, {'email': email})
     # OTP is valid, proceed with authentication or password reset
     return Response({"message": "OTP verified successfully."}, status=200)
 
@@ -381,12 +389,12 @@ def products(request, product_id=None):
     elif request.method == 'POST':
         print("Received Data:", request.data)  # Debugging
 
-        user_id = request.data.get("user")  # ✅ Expecting User ID now
+        user_id = request.data.get("user")  # Expecting User ID now
 
         print("user_id"+str(user_id))
 
         try:
-            user = User.objects.get(id=user_id)  # ✅ Fetch User by ID
+            user = User.objects.get(id=user_id)  # Fetch User by ID
         except User.DoesNotExist:
             return Response({"user": ["User not found."]}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -394,7 +402,9 @@ def products(request, product_id=None):
 
         serializer = ProductSerializer(data=product_data, context={'request': request})
         if serializer.is_valid():
-            serializer.save(user=user)  # ✅ Save image explicitly
+            serializer.save(user=user)  # Save image explicitly
+            product_instance = serializer.save(user=user)
+            add_log_entry(request.user, LogAction.PRODUCT_CREATE, {'product_id': product_instance.id, 'name': product_instance.name, 'price': str(product_instance.price)})
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -418,12 +428,19 @@ def products(request, product_id=None):
             serializer = ProductSerializer(product, data=product_data, partial=True, context={'request': request})
             if serializer.is_valid():
                 serializer.save()
+                updated_product = serializer.save()
+                add_log_entry(request.user, LogAction.PRODUCT_UPDATE, {'product_id': updated_product.id, 'updated_fields': list(serializer.validated_data.keys())})                
                 return Response(serializer.data)
-
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         elif request.method == 'DELETE':
+            if product.user != request.user:
+                return Response({"error": "You can only delete your own products"}, status=status.HTTP_403_FORBIDDEN)
+            
+            product_id_to_log = product.id # Capture before deleting
+            product_name_to_log = product.name
             product.delete()
+            add_log_entry(request.user, LogAction.PRODUCT_DELETE, {'product_id': product_id_to_log, 'name': product_name_to_log})
             return Response({"message": "Product deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
 
 
@@ -451,21 +468,29 @@ def buy_product(request, product_id):
     if product and ProductSerializer(product).data["sold"] == True:
         return Response({"error": "Product is already sold."}, status=400)
     
+    # Check if already purchased before starting transaction
+    existing_purchase = Purchase.objects.filter(product=product, buyer=request.user).exists()
+    if existing_purchase:
+        return Response({"error": "You have already purchased this product."}, status=400)
 
     with transaction.atomic():
-        buyer.wallet -= product.price
-        buyer.save()
-
-        # Add price to seller's wallet
-        seller.wallet += product.price
-        seller.save()
-
-        product.sold = True
+        # Rest of the transaction logic
+        # Create purchase
+        purchase = Purchase.objects.create(
+            product=product,
+            buyer=buyer,
+            purchase_price=product.price
+        )
         
-        # Ensure the purchase is only created once
-        purchase, created = Purchase.objects.get_or_create(product=product, buyer=request.user)
-        if not created:
-            return Response({"error": "You have already purchased this product."}, status=400)
+        log_details = {
+            'product_id': product.id,
+            'product_name': product.name,
+            'seller_id': seller.id,
+            'buyer_id': buyer.id,
+            'price': str(product.price),
+            'purchase_id': purchase.id
+        }
+        add_log_entry(buyer, LogAction.PRODUCT_PURCHASE, log_details)
 
         # Notify the seller
         seller_email = seller.email
@@ -477,7 +502,10 @@ def buy_product(request, product_id):
             fail_silently=False,
         )   
 
-        product.delete()
+        # product.delete()
+        # Instead of product.delete()
+        product.sold = True
+        product.save()
 
     return Response({"message": "Product purchased successfully!"})
 
@@ -527,6 +555,9 @@ def create_group(request):
                 except User.DoesNotExist:
                     continue  # Skip missing users
 
+            member_ids = [m['id'] for m in members_data]
+            add_log_entry(request.user, LogAction.GROUP_CREATE, {'group_id': group.id, 'group_name': group.name, 'initial_member_ids': member_ids})
+
             serializer = GroupDetailSerializer(group)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -566,7 +597,8 @@ def add_group_member(request, group_id):
             group=group,
             encrypted_symmetric_key=encrypted_key
         )
-        
+        add_log_entry(request.user, LogAction.GROUP_MEMBER_ADD, {'group_id': group.id, 'added_member_id': member.id})
+
         # Get updated group details including all members
         updated_group_data = GroupDetailSerializer(group).data
 
@@ -598,8 +630,9 @@ def remove_group_member(request, group_id, member_id):
         if member == group.admin:
             return Response({"error": "Cannot remove the group admin"}, status=status.HTTP_400_BAD_REQUEST)
         # Remove the member
+        member_id_to_log = member.id # Capture before deleting
         membership.delete()
-
+        add_log_entry(request.user, LogAction.GROUP_MEMBER_REMOVE, {'group_id': group.id, 'removed_member_id': member_id_to_log})
         # After member removal, admin should update encrypted keys for remaining members
         # This happens client-side but we need to provide the updated group data
         updated_group_data = GroupDetailSerializer(group).data
@@ -689,6 +722,13 @@ def send_group_message(request, group_id):
             fileType=file_type,
             fileName=file_name
         )
+        log_details = {
+            'group_id': group.id,
+            'message_id': group_message.id,
+            'type': group_message.type,
+            'fileName': group_message.fileName # Log file name if applicable
+        }
+        add_log_entry(request.user, LogAction.GROUP_MESSAGE_SEND, log_details)
         # Return the created message details
         serializer = GroupMessageSerializer(group_message)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -720,3 +760,24 @@ def get_group_messages(request, group_id):
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def report_user(request):
+    reported_user_id = request.data.get("user_id")
+    reason = request.data.get("reason")
+    
+    if not reported_user_id or not reason:
+        return Response({"error": "User ID and reason are required."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    reported_user = get_object_or_404(User, id=reported_user_id)
+    
+    # Log the report action
+    log_details = {
+        'reported_user_id': reported_user_id,
+        'reported_username': reported_user.username,
+        'reason': reason
+    }
+    add_log_entry(request.user, LogAction.USER_REPORT, log_details)
+    
+    return Response({"message": "User reported successfully."}, status=status.HTTP_200_OK)
