@@ -30,6 +30,10 @@ class LogAction:
     GROUP_MEMBER_REMOVE = 'GROUP_MEMBER_REMOVE'
     GROUP_MESSAGE_SEND = 'GROUP_MESSAGE_SEND'
     USER_REPORT = 'USER_REPORT' 
+    VERIFICATION_REQUESTED = 'VERIFICATION_REQUESTED'
+    VERIFICATION_APPROVED = 'VERIFICATION_APPROVED'
+    VERIFICATION_REJECTED = 'VERIFICATION_REJECTED'
+    USER_DELETED_BY_ADMIN = 'USER_DELETED_BY_ADMIN'
 
 
 class User(AbstractUser):
@@ -239,3 +243,27 @@ def add_log_entry(user, action, details):
         print(f"Error creating log entry: {e}")
         return None
     
+class VerificationRequest(models.Model):
+    class VerificationType(models.TextChoices):
+        EMAIL = 'EMAIL', 'Email'
+        PHONE = 'PHONE', 'Phone'
+
+    class VerificationStatus(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        APPROVED = 'APPROVED', 'Approved'
+        REJECTED = 'REJECTED', 'Rejected'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verification_requests')
+    verification_type = models.CharField(max_length=10, choices=VerificationType.choices)
+    status = models.CharField(max_length=10, choices=VerificationStatus.choices, default=VerificationStatus.PENDING)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_verifications')
+    admin_notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('user', 'verification_type', 'status') # Prevent multiple pending requests of same type? Or allow history? Let's allow history for now. Remove unique_together if history is desired.
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_verification_type_display()} - {self.get_status_display()}"

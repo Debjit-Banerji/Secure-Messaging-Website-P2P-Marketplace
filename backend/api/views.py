@@ -38,7 +38,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.response import Response
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
-from .models import Product, Purchase, Group, GroupMembership, GroupMessage
+from .models import Product, Purchase, Group, GroupMembership, GroupMessage, VerificationRequest
 from .serializers import ProductSerializer, Group, GroupDetailSerializer, GroupListSerializer, GroupMembershipSerializer, GroupSerializer, GroupMessageSerializer, GroupMembership, GroupMessage
 from django.utils import timezone
 from datetime import timedelta
@@ -329,33 +329,88 @@ def send_otp_email(request):
         return Response({"error": f"Failed to send email: {str(e)}"}, status=500)
 
 
+# @api_view(["POST"])
+# @permission_classes([AllowAny])
+# def verify_otp(request):
+#     email = request.data.get("email")
+#     otp_code = request.data.get("otp")
+
+#     if not email or not otp_code:
+#         return Response({"error": "Email and OTP are required."}, status=400)
+
+#     user = User.objects.filter(email=email).first()
+#     if not user:
+#         return Response({"error": "User not found."}, status=404)
+
+#     otp_obj = OTP.objects.filter(user=user, otp=otp_code).first()
+
+#     if not otp_obj:
+#         add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Invalid OTP', 'email': email})
+#         return Response({"error": "Invalid OTP."}, status=400)
+
+#     if not otp_obj.is_valid():
+#         add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Expired OTP', 'email': email})
+#         return Response({"error": "OTP has expired."}, status=400)
+    
+#     add_log_entry(user, LogAction.OTP_VERIFY_SUCCESS, {'email': email})
+#     # OTP is valid, proceed with authentication or password reset
+#     return Response({"message": "OTP verified successfully."}, status=200)
+
+
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@permission_classes([AllowAny]) # Or IsAuthenticated if OTP verification requires login
 def verify_otp(request):
-    email = request.data.get("email")
+    email = request.data.get("email") # Assuming email is the identifier for now
     otp_code = request.data.get("otp")
+    # --- Add verification type ---
+    verification_type = request.data.get("type", "").upper() # Expect 'EMAIL' or 'PHONE'
 
-    if not email or not otp_code:
-        return Response({"error": "Email and OTP are required."}, status=400)
+    if not email or not otp_code or not verification_type:
+        return Response({"error": "Email, OTP, and type (EMAIL/PHONE) are required."}, status=400)
 
+    if verification_type not in [VerificationRequest.VerificationType.EMAIL, VerificationRequest.VerificationType.PHONE]:
+         return Response({"error": "Invalid verification type."}, status=400)
+
+    # Find user by email (adjust if using phone number as identifier for phone OTP)
     user = User.objects.filter(email=email).first()
     if not user:
         return Response({"error": "User not found."}, status=404)
 
+    # --- Check OTP ---
     otp_obj = OTP.objects.filter(user=user, otp=otp_code).first()
 
     if not otp_obj:
-        add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Invalid OTP', 'email': email})
+        add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Invalid OTP', 'identifier': email, 'type': verification_type})
         return Response({"error": "Invalid OTP."}, status=400)
 
     if not otp_obj.is_valid():
-        add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Expired OTP', 'email': email})
+        add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': 'Expired OTP', 'identifier': email, 'type': verification_type})
+        otp_obj.delete() # Delete expired OTP
         return Response({"error": "OTP has expired."}, status=400)
-    
-    add_log_entry(user, LogAction.OTP_VERIFY_SUCCESS, {'email': email})
-    # OTP is valid, proceed with authentication or password reset
-    return Response({"message": "OTP verified successfully."}, status=200)
 
+    try:
+
+        verification_request = VerificationRequest.objects.create(
+            user=user,
+            verification_type=verification_type,
+            status=VerificationRequest.VerificationStatus.PENDING
+        )
+
+        # Log successful OTP verification *and* the request creation
+        add_log_entry(user, LogAction.OTP_VERIFY_SUCCESS, {'identifier': email, 'type': verification_type})
+        add_log_entry(user, LogAction.VERIFICATION_REQUESTED, {
+            'request_id': verification_request.id,
+            'user_id': user.id,
+            'type': verification_type
+        })
+
+        otp_obj.delete()
+
+        return Response({"message": "OTP verified successfully. Verification pending admin approval."}, status=200)
+
+    except Exception as e:
+        add_log_entry(user, LogAction.OTP_VERIFY_FAIL, {'reason': f'Error creating verification request: {str(e)}', 'identifier': email, 'type': verification_type})
+        return Response({"error": f"An error occurred: {str(e)}"}, status=500)
 
 
 @api_view(['GET', 'POST', 'PUT', 'DELETE'])
