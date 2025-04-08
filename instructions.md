@@ -51,4 +51,4 @@ python manage.py runserver
 npm start
 ```
 
-### Main Application: Open your web browser and navigate to http://localhost:3000 ( make sure you are connected to IIITD network)
+### Main Application: Open your web browser and navigate to https://192.168.2.240:3000/ ( make sure you are connected to IIITD network)
