@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 from urllib.parse import urlparse
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -43,23 +44,84 @@ INSTALLED_APPS = [
     'api',
     'channels',
     'corsheaders',
+    # Add this if you use BLACKLIST_AFTER_ROTATION
+    # 'rest_framework_simplejwt.token_blacklist',
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # Should be high up
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware', # Ensure this is present
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# --- CORRECTED REST_FRAMEWORK ---
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Use your custom cookie authentication class
+        'api.authentication.JWTCookieAuthentication',
+        # Remove or comment out the default if not needed elsewhere
+        # 'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    # Add default permission classes if desired
+    # 'DEFAULT_PERMISSION_CLASSES': [
+    #     'rest_framework.permissions.IsAuthenticated',
+    # ]
+}
+
+# --- SIMPLE_JWT Configuration (Looks mostly correct) ---
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), # Keep short
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),  # Can be longer
+    "ROTATE_REFRESH_TOKENS": True, # Recommended for better security
+    "BLACKLIST_AFTER_ROTATION": True, # Requires installing simplejwt blacklist app and running migrations
+    "UPDATE_LAST_LOGIN": True,
+
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY, # Use your Django secret key
+    "VERIFYING_KEY": "",
+    "AUDIENCE": None,
+    "ISSUER": None,
+    "JSON_ENCODER": None,
+    "JWK_URL": None,
+    "LEEWAY": 0,
+
+    "AUTH_HEADER_TYPES": ("Bearer",), # Still useful for testing/other clients
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+    "USER_AUTHENTICATION_RULE": "rest_framework_simplejwt.authentication.default_user_authentication_rule",
+
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+    "TOKEN_USER_CLASS": "rest_framework_simplejwt.models.TokenUser",
+
+    "JTI_CLAIM": "jti",
+
+    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
+    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
+    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
+
+    "TOKEN_OBTAIN_SERIALIZER": "api.views.CookieTokenObtainPairSerializer", # Correct
+    "TOKEN_REFRESH_SERIALIZER": "api.views.CookieTokenRefreshSerializer",   # Correct
+    # Add blacklist serializer if using blacklisting
+    # "TOKEN_BLACKLIST_SERIALIZER": "rest_framework_simplejwt.serializers.TokenBlacklistSerializer",
+
+    # --- Custom Cookie Settings ---
+    # These names must match the keys used in your JWTCookieAuthentication class and Views
+    'AUTH_COOKIE_ACCESS_NAME': 'access_token',    # Default: 'access_token'
+    'AUTH_COOKIE_REFRESH_NAME': 'refresh_token',   # Default: 'refresh_token'
+    'AUTH_COOKIE_SECURE': not DEBUG,              # Use DEBUG directly. True in prod (HTTPS)
+    'AUTH_COOKIE_HTTP_ONLY' : True,              # Access/Refresh tokens should be HttpOnly
+    'AUTH_COOKIE_PATH': '/',                     # Default: '/'
+    'AUTH_COOKIE_DOMAIN': None,                  # Default: None. Set if needed for subdomains
+    'AUTH_COOKIE_SAMESITE': 'Strict',             # Default: 'Lax'. 'Strict' is more secure.
+    # Path specific for refresh cookie helps security, ensure it matches view/logout logic
+    'AUTH_COOKIE_REFRESH_PATH': '/api/token/refresh/',
 }
 
 CORS_ALLOWED_ORIGINS = [
@@ -67,7 +129,9 @@ CORS_ALLOWED_ORIGINS = [
     "https://localhost:3000",
     "http://192.168.2.240:3000",
     "https://192.168.2.240:3000"
+    # Add production frontend origin(s) here
 ]
+CORS_ALLOW_CREDENTIALS = True # Important: Allow cookies for cross-origin requests
 
 ROOT_URLCONF = 'backend.urls'
 
@@ -94,14 +158,6 @@ ASGI_APPLICATION = 'backend.asgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
-
-# Replace the DATABASES section of your settings.py with this
 tmpPostgres = urlparse('postgresql://neondb_owner:npg_9CWwmJ1NFEYs@ep-quiet-shape-a1wo8w3d-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require')
 
 DATABASES = {
@@ -111,7 +167,11 @@ DATABASES = {
         'USER': tmpPostgres.username,
         'PASSWORD': tmpPostgres.password,
         'HOST': tmpPostgres.hostname,
-        'PORT': 5432,
+        'PORT': 5432, # Default PostgreSQL port
+        'OPTIONS': {
+             # Add SSL options if required by your DB provider beyond the connection string
+             # 'sslmode': 'require', # Usually handled by connection string
+        },
     }
 }
 
@@ -120,18 +180,10 @@ DATABASES = {
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    { 'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator', },
+    { 'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', },
+    { 'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator', },
+    { 'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator', },
 ]
 
 AUTH_USER_MODEL = 'api.User'
@@ -140,29 +192,63 @@ AUTH_USER_MODEL = 'api.User'
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
-USE_TZ = True
+USE_TZ = True # Important for timezone-aware datetimes like token expiry
 
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+# Define STATIC_ROOT for collectstatic in production
+# STATIC_ROOT = BASE_DIR / 'staticfiles'
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Email Settings (Looks OK)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'   # ✅ Correct host for Gmail
-EMAIL_PORT = 587                # ✅ TLS uses port 587
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_USE_SSL = False
+EMAIL_USE_SSL = False # Typically TLS uses port 587, SSL uses 465. Don't set both to True.
 EMAIL_HOST_USER = 'debjit22146@iiitd.ac.in'
-EMAIL_HOST_PASSWORD = 'xzmc safh dqlo ngrd'
-DEFFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST_PASSWORD = 'xzmc safh dqlo ngrd' # Consider using environment variables for sensitive info
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER # Use DEFAULT_FROM_EMAIL, not DEFFAULT
+
+
+# --- CORRECTED CSRF and Security Settings ---
+CSRF_COOKIE_HTTPONLY = False # MUST BE FALSE for JavaScript to read the token
+CSRF_COOKIE_SECURE = not DEBUG  # Use DEBUG. True in prod (HTTPS)
+CSRF_COOKIE_SAMESITE = "Strict" # Or 'Lax'. Stricter is better.
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "https://localhost:3000", # Use https if your local dev server uses it
+    "http://192.168.2.240:3000",
+    "https://192.168.2.240:3000"
+    # Add production frontend origin(s) here
+]
+
+# Session Cookie settings (Good defaults)
+SESSION_COOKIE_SAMESITE = "Strict"
+SESSION_COOKIE_SECURE = not DEBUG # Use DEBUG. True in prod
+SESSION_COOKIE_HTTPONLY = True # Session cookies should generally be HttpOnly
+
+# Other Security Headers (Good defaults)
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_SSL_REDIRECT = not DEBUG # Set to True in production to force HTTPS
+# SECURE_HSTS_SECONDS = 31536000 # Enable HSTS in production after confirming HTTPS works
+# SECURE_HSTS_INCLUDE_SUBDOMAINS = True # If applicable
+# SECURE_HSTS_PRELOAD = True # If applicable
+
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+# --- REMOVE THE DUPLICATE/ERRONEOUS BLOCK THAT WAS AT THE END ---
