@@ -41,12 +41,12 @@ To gain admin preivelage use the following credentials :
 ```bash
 npm install
   ```
-### To start the backend, run:
+### To start the backend, navigate to backend directory and run:
 ``` bash
 python manage.py runserver
 ```
 
-### To start the frontend, in another terminal run:
+### To start the frontend, navigate to frontend directory in another terminal and run:
 ```bash
 npm start
 ```
