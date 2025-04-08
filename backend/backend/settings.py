@@ -62,15 +62,8 @@ MIDDLEWARE = [
 # --- CORRECTED REST_FRAMEWORK ---
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        # Use your custom cookie authentication class
-        'api.authentication.JWTCookieAuthentication',
-        # Remove or comment out the default if not needed elsewhere
-        # 'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    # Add default permission classes if desired
-    # 'DEFAULT_PERMISSION_CLASSES': [
-    #     'rest_framework.permissions.IsAuthenticated',
-    # ]
 }
 
 # --- SIMPLE_JWT Configuration (Looks mostly correct) ---
@@ -106,8 +99,8 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
     "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
 
-    "TOKEN_OBTAIN_SERIALIZER": "api.views.CookieTokenObtainPairSerializer", # Correct
-    "TOKEN_REFRESH_SERIALIZER": "api.views.CookieTokenRefreshSerializer",   # Correct
+    "TOKEN_OBTAIN_SERIALIZER": "api.serializers.CookieTokenObtainPairSerializer", # Correct
+    "TOKEN_REFRESH_SERIALIZER": "api.serializers.CookieTokenRefreshSerializer",   # Correct
     # Add blacklist serializer if using blacklisting
     # "TOKEN_BLACKLIST_SERIALIZER": "rest_framework_simplejwt.serializers.TokenBlacklistSerializer",
 
