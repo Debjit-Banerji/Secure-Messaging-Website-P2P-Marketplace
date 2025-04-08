@@ -1,12 +1,16 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import MyTokenObtainPairView, register_user, search_users, update_profile, search_friends_groups, get_chats, send_chat, sample_api, add_contact, list_contacts, remove_contact, profile_view, send_otp_email, verify_otp, products, buy_product, report_user
+from .views import (MyTokenObtainPairView, register_user, search_users, update_profile, search_friends_groups,
+                     get_chats, send_chat, sample_api, add_contact, list_contacts,
+                     remove_contact, profile_view, send_otp_email, verify_otp, products,
+                    buy_product, report_user, CookieTokenObtainPairView, CookieTokenRefreshView, LogoutView)
 from . import views
 
 urlpatterns = [
     path('hello/', sample_api, name='hello'),
-    path('token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('token/', CookieTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
+    path('logout/', LogoutView.as_view(), name='logout'),
     path('register/', register_user, name='register'),
     path('search-users/', search_users, name='search-users'),
     path('update-profile/', update_profile, name='update-profile'),

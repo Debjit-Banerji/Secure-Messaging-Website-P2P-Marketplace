@@ -1,48 +1,62 @@
-from django.shortcuts import render
-
-# Create your views here.
-from django.http import JsonResponse
-from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework import serializers
-# from django.contrib.auth.models import User
+import random
+from datetime import timedelta
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
+from django.core.mail import send_mail
+from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
+from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
+
+from rest_framework import serializers, status
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework import status
-from .models import ChatMessage, Group
-from django.contrib.auth.hashers import make_password
-from django.contrib.auth import get_user_model
-from django.db import IntegrityError
-from .serializers import UserProfileSerializer
-from .serializers import (
-    UserSerializer,
-    UserProfileUpdateSerializer,
-    GroupSerializer,
-    ChatMessageSerializer
+from rest_framework.views import APIView
+
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.settings import api_settings as jwt_settings
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from .models import (
+    ChatMessage, 
+    Group, 
+    GroupMembership, 
+    GroupMessage, 
+    LogAction,
+    LogBlock, 
+    OTP, 
+    Product, 
+    Purchase, 
+    VerificationRequest,
+    add_log_entry
 )
-from django.core.mail import send_mail
-from django.http import JsonResponse
-from .models import OTP, LogBlock, add_log_entry, LogAction
-import random
-from django.conf import settings
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from django.db import transaction
-from django.core.mail import send_mail
-from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.response import Response
-from rest_framework.authentication import SessionAuthentication, TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
-from .models import Product, Purchase, Group, GroupMembership, GroupMessage, VerificationRequest
-from .serializers import ProductSerializer, Group, GroupDetailSerializer, GroupListSerializer, GroupMembershipSerializer, GroupSerializer, GroupMessageSerializer, GroupMembership, GroupMessage
-from django.utils import timezone
-from datetime import timedelta
-from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
+from .serializers import (
+    ChatMessageSerializer,
+    GroupDetailSerializer, 
+    GroupListSerializer, 
+    GroupMembershipSerializer, 
+    GroupMessageSerializer, 
+    GroupSerializer,
+    ProductSerializer,
+    UserProfileSerializer,
+    UserProfileUpdateSerializer,
+    UserSerializer
+)
+
+ACCESS_TOKEN_LIFETIME = timedelta(minutes=5) # Or use jwt_settings.ACCESS_TOKEN_LIFETIME
+REFRESH_TOKEN_LIFETIME = timedelta(days=1)   # Or use jwt_settings.REFRESH_TOKEN_LIFETIME
+COOKIE_HTTPONLY = True
+COOKIE_SECURE = not settings.DEBUG # Set to True in production (requires HTTPS)
+COOKIE_SAMESITE = 'Strict' # Or 'Lax'
+ACCESS_TOKEN_COOKIE_NAME = 'access_token'
+REFRESH_TOKEN_COOKIE_NAME = 'refresh_token'
 
 User = get_user_model()
 
@@ -72,6 +86,143 @@ class UserSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 # API endpoint to register users
+class CookieTokenObtainPairSerializer(TokenObtainPairSerializer):
+    # Optional: Add extra claims if needed, like in your original MyTokenObtainPairSerializer
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token['username'] = user.username
+        # Add other custom claims here if necessary
+        return token
+
+    def validate(self, attrs):
+        # Generate tokens but don't include them in the response body
+        data = super().validate(attrs)
+        # Remove refresh and access tokens from the response data
+        data.pop('refresh', None)
+        data.pop('access', None)
+
+        # Include user data if needed by the frontend upon login
+        data['user'] = UserSerializer(self.user).data # Or UserProfileSerializer
+        # Log login action
+        add_log_entry(self.user, LogAction.USER_LOGIN, {'username': self.user.username})
+        return data
+
+class CookieTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CookieTokenObtainPairSerializer
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        # If login is successful (status 200), set cookies
+        if response.status_code == 200 and REFRESH_TOKEN_COOKIE_NAME in self.get_serializer().validated_data:
+            refresh_token = self.get_serializer().validated_data.pop(REFRESH_TOKEN_COOKIE_NAME) # Retrieve token generated by serializer hook/signal
+            access_token = self.get_serializer().validated_data.pop(ACCESS_TOKEN_COOKIE_NAME) # Retrieve token generated by serializer hook/signal
+
+            response.set_cookie(
+                key=ACCESS_TOKEN_COOKIE_NAME,
+                value=access_token,
+                expires=timezone.now() + ACCESS_TOKEN_LIFETIME,
+                httponly=COOKIE_HTTPONLY,
+                secure=COOKIE_SECURE,
+                samesite=COOKIE_SAMESITE
+            )
+            response.set_cookie(
+                key=REFRESH_TOKEN_COOKIE_NAME,
+                value=refresh_token,
+                expires=timezone.now() + REFRESH_TOKEN_LIFETIME,
+                httponly=COOKIE_HTTPONLY,
+                secure=COOKIE_SECURE,
+                samesite=COOKIE_SAMESITE,
+                path=settings.SIMPLE_JWT.get('AUTH_COOKIE_REFRESH_PATH', '/api/token/refresh/') # Set path specific to refresh endpoint
+            )
+            # Ensure the original tokens aren't in the final response body
+            if 'access' in response.data: del response.data['access']
+            if 'refresh' in response.data: del response.data['refresh']
+
+        return super().finalize_response(request, response, *args, **kwargs)
+
+# --- Custom Token Refresh Serializer (Reads Cookie) ---
+class CookieTokenRefreshSerializer(TokenRefreshSerializer):
+    refresh = None # We don't expect 'refresh' in the request body
+
+    def validate(self, attrs):
+        # Read refresh token from cookie
+        refresh_token_cookie = self.context['request'].COOKIES.get(REFRESH_TOKEN_COOKIE_NAME)
+
+        if not refresh_token_cookie:
+            raise InvalidToken('No refresh token found in cookie.')
+
+        attrs['refresh'] = refresh_token_cookie # Pass the cookie value to the parent validator
+
+        # Perform standard refresh token validation
+        try:
+            data = super().validate(attrs)
+        except TokenError as e:
+             # Log potentially invalid refresh attempt if needed
+             # add_log_entry(None, 'REFRESH_TOKEN_FAIL', {'reason': str(e)}) # User might not be known here
+             raise InvalidToken(e.args[0])
+
+        # Don't include the new refresh token in the response body
+        # (unless implementing refresh token rotation, which needs careful handling)
+        data.pop('refresh', None)
+        # Log refresh action if needed (might be noisy)
+        # user = User.objects.get(id=jwt_settings.DECODE(data['access'], verify=False)['user_id']) # Decode without verification to get user_id
+        # add_log_entry(user, 'TOKEN_REFRESH', {})
+        return data
+
+# --- Custom Token Refresh View (Sets Access Cookie) ---
+class CookieTokenRefreshView(TokenRefreshView):
+    serializer_class = CookieTokenRefreshSerializer
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        # If refresh is successful, set the new access token cookie
+        if response.status_code == 200 and 'access' in response.data:
+            access_token = response.data['access']
+            response.set_cookie(
+                key=ACCESS_TOKEN_COOKIE_NAME,
+                value=access_token,
+                expires=timezone.now() + ACCESS_TOKEN_LIFETIME,
+                httponly=COOKIE_HTTPONLY,
+                secure=COOKIE_SECURE,
+                samesite=COOKIE_SAMESITE
+            )
+            # Remove the access token from the response body
+            del response.data['access']
+
+            # Handle refresh token cookie if rotating tokens
+            if 'refresh' in response.data:
+                 refresh_token = response.data['refresh']
+                 response.set_cookie(
+                     key=REFRESH_TOKEN_COOKIE_NAME,
+                     value=refresh_token,
+                     expires=timezone.now() + REFRESH_TOKEN_LIFETIME,
+                     httponly=COOKIE_HTTPONLY,
+                     secure=COOKIE_SECURE,
+                     samesite=COOKIE_SAMESITE,
+                     path=settings.SIMPLE_JWT.get('AUTH_COOKIE_REFRESH_PATH', '/api/token/refresh/')
+                 )
+                 del response.data['refresh']
+
+        # Clear cookies on failure (e.g., invalid refresh token)
+        elif response.status_code >= 400:
+             response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME)
+             response.delete_cookie(REFRESH_TOKEN_COOKIE_NAME, path=settings.SIMPLE_JWT.get('AUTH_COOKIE_REFRESH_PATH', '/api/token/refresh/'))
+
+        return super().finalize_response(request, response, *args, **kwargs)
+
+# --- Logout View (Clears Cookies) ---
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated] # Require authentication to logout
+
+    def post(self, request, *args, **kwargs):
+        # Log logout action
+        add_log_entry(request.user, LogAction.USER_LOGOUT, {'username': request.user.username})
+
+        response = Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
+        # Clear the cookies
+        response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME)
+        response.delete_cookie(REFRESH_TOKEN_COOKIE_NAME, path=settings.SIMPLE_JWT.get('AUTH_COOKIE_REFRESH_PATH', '/api/token/refresh/')) # Use the same path as set during login/refresh
+        return response
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -836,3 +987,4 @@ def report_user(request):
     add_log_entry(request.user, LogAction.USER_REPORT, log_details)
     
     return Response({"message": "User reported successfully."}, status=status.HTTP_200_OK)
+
